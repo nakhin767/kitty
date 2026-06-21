@@ -1,0 +1,479 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="SabaiCare - ระบบดูแลผู้ป่วยอัมพาต ผู้ป่วยติดเตียง และผู้ป่วยเส้นเลือดในสมองแตก ด้วยเทคโนโลยี Edge AI, ตรวจจับพิกัดใบหน้าและท่าทาง และระบบดักจับเสียงสำลักอัตโนมัติ">
+    <title>SabaiCare - ระบบผู้ช่วยดูแลผู้ป่วยอัจฉริยะ (Edge AI Assistive System)</title>
+    
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@300;400;500;600;700&family=Outfit:wght@400;600;700;800&display=swap" rel="stylesheet">
+    
+    <!-- FontAwesome for icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- Stylesheet Link -->
+    <link rel="stylesheet" href="style.css">
+    
+    <!-- MediaPipe CDN scripts -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js" crossorigin="anonymous"></script>
+</head>
+<body class="dark-mode">
+
+    <!-- Global Emergency Alert Indicator (Top Banner) -->
+    <div id="global-emergency-banner" class="emergency-banner hidden">
+        <div class="banner-content">
+            <i class="fa-solid fa-triangle-exclamation fa-beat"></i>
+            <span id="emergency-banner-text">เตือนภัยฉุกเฉิน: เตียง A1 ตรวจพบเสียงสำลักไอผิดปกติ!</span>
+            <button id="btn-dismiss-global-alert" class="btn btn-danger">ปิดรับทราบ (Dismiss)</button>
+        </div>
+    </div>
+
+    <!-- Header / Navigation Bar -->
+    <header class="app-header">
+        <div class="brand">
+            <div class="logo-icon"><i class="fa-solid fa-heart-pulse"></i></div>
+            <div class="brand-text">
+                <h1>SabaiCare</h1>
+                <span class="sub-logo">Edge AI Smart Caregiver Platform</span>
+            </div>
+        </div>
+        
+        <!-- Live Connection Status -->
+        <div class="system-status">
+            <span class="status-indicator online" id="net-status-dot"></span>
+            <span class="status-text" id="net-status-text">LAN Node Connected (Simulated)</span>
+        </div>
+        
+        <nav class="nav-tabs">
+            <button class="nav-btn active" id="tab-patient" onclick="switchTab('patient-station')">
+                <i class="fa-solid fa-bed-pulse"></i> ข้างเตียงคนไข้ (Patient Station)
+            </button>
+            <button class="nav-btn" id="tab-nurse" onclick="switchTab('nurse-monitor')">
+                <i class="fa-solid fa-hospital-user"></i> จอมอนิเตอร์พยาบาล (Nurse Counter)
+                <span class="badge hidden" id="nurse-alert-badge">0</span>
+            </button>
+            <button class="nav-btn" id="tab-settings" onclick="switchTab('system-settings')">
+                <i class="fa-solid fa-gears"></i> ตั้งค่าระบบ (Settings)
+            </button>
+        </nav>
+    </header>
+
+    <!-- Main Container -->
+    <main class="app-container">
+        
+        <!-- 1. PATIENT STATION TAB -->
+        <section id="patient-station" class="tab-content active">
+            <div class="station-grid">
+                
+                <!-- Left Column: Camera and AI Processing -->
+                <div class="panel ai-camera-panel">
+                    <div class="panel-header">
+                        <h2><i class="fa-solid fa-video"></i> กล้องตรวจจับอัจฉริยะ (Edge AI Camera Feed)</h2>
+                        <div class="status-group">
+                            <span class="badge-status pose-status-idle" id="pose-label">ตรวจจับท่าทาง: รอกล้อง...</span>
+                        </div>
+                    </div>
+                    
+                    <div class="camera-container">
+                        <!-- Video for WebRTC Camera -->
+                        <video id="video-input" class="video-element" autoplay playsinline muted></video>
+                        <!-- Canvas overlay for MediaPipe mesh drawing -->
+                        <canvas id="canvas-output" class="canvas-element"></canvas>
+                        
+                        <!-- Face Pointer indicator overlay -->
+                        <div id="face-cursor" class="face-cursor-dot hidden">
+                            <svg class="cursor-ring" viewBox="0 0 40 40">
+                                <circle class="bg" cx="20" cy="20" r="18"></circle>
+                                <circle class="progress" id="cursor-progress" cx="20" cy="20" r="18"></circle>
+                            </svg>
+                        </div>
+
+                        <!-- Calibration / Guide Box overlay for bed positions -->
+                        <div class="bed-bounding-box" id="bed-bound-guide">
+                            <span class="box-label">โซนเฝ้าระวังเตียงนอน (Bed Safety Zone)</span>
+                        </div>
+                        
+                        <!-- Simulated Patient Animation (Fallback when no Camera is active) -->
+                        <div id="simulated-patient-overlay" class="sim-patient-view">
+                            <div class="sim-avatar">
+                                <i class="fa-solid fa-user-injured fa-fade"></i>
+                            </div>
+                            <div class="sim-status">
+                                <h3>ระบบสาธิตเสมือนจริง (Camera Offline)</h3>
+                                <p>กำลังจำลองสัญญาณจากกล้องหัวเตียง A1</p>
+                                <div class="sim-controls">
+                                    <button class="btn btn-sm btn-outline" onclick="simulatePatientAction('sit-up')">จำลอง: ลุกนั่ง</button>
+                                    <button class="btn btn-sm btn-outline" onclick="simulatePatientAction('out-of-bed')">จำลอง: ขาออกนอกเตียง</button>
+                                    <button class="btn btn-sm btn-outline" onclick="simulatePatientAction('normal')">จำลอง: ท่าปกติ</button>
+                                    <button class="btn btn-sm btn-outline" onclick="simulatePatientAction('turn-left')">จำลอง: นอนตะแคงซ้าย</button>
+                                    <button class="btn btn-sm btn-outline" onclick="simulatePatientAction('turn-right')">จำลอง: นอนตะแคงขวา</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Audio Threshold Meter and Control -->
+                    <div class="audio-monitor-box">
+                        <div class="audio-info">
+                            <span class="label"><i class="fa-solid fa-microphone-lines"></i> ความดังเสียงไมโครโฟนหัวเตียง (Mic Level)</span>
+                            <span class="val" id="audio-db-value">-∞ dB</span>
+                        </div>
+                        <div class="audio-meter-bar">
+                            <div class="audio-level-fill" id="audio-level-bar" style="width: 0%"></div>
+                            <div class="audio-threshold-line" id="audio-threshold-indicator" style="left: 65%" title="เกณฑ์ส่งสัญญาณเสียงดัง"></div>
+                        </div>
+                        <div class="audio-status-row">
+                            <span class="mic-toggle-label" id="mic-status-text">ปิดระบบดักเสียงสำลัก</span>
+                            <div class="event-counter">
+                                ตรวจพบเสียงสะดุดสะสม: <strong id="cough-count-badge" class="badge-count">0</strong> / 3 ครั้ง
+                            </div>
+                            <button class="btn btn-sm" id="btn-toggle-mic" onclick="toggleMicrophone()">
+                                <i class="fa-solid fa-microphone-slash"></i> เปิดไมโครโฟน
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <!-- Camera Calibration and Mode selection -->
+                    <div class="camera-actions">
+                        <button class="btn btn-primary" id="btn-start-camera" onclick="startCamera()">
+                            <i class="fa-solid fa-camera"></i> เปิดกล้องจริง
+                        </button>
+                        <button class="btn btn-outline" id="btn-calibrate" onclick="calibrateFaceCenter()" disabled>
+                            <i class="fa-solid fa-arrows-to-eye"></i> Calibrate จุดเล็ง
+                        </button>
+                        <div class="switch-container">
+                            <span class="switch-label">สแกนอัตโนมัติ (Auto Scan)</span>
+                            <label class="switch">
+                                <input type="checkbox" id="chk-auto-scan" onchange="toggleAutoScan(this.checked)">
+                                <span class="slider round"></span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Right Column: Near-Eye AAC Interface & Smart Room Simulation -->
+                <div class="panel aac-panel">
+                    <div class="panel-header">
+                        <h2><i class="fa-solid fa-tablet-screen-button"></i> หน้าจอข้างเตียงผู้ป่วย (Near-Eye AAC Interface)</h2>
+                        <span class="instruction-bubble">ควบคุมโดย: <strong>หันศีรษะเล็ง/กด Spacebar/คลิกหน้าจอ</strong></span>
+                    </div>
+                    
+                    <!-- AAC Grid buttons (Extra Large Target Areas) -->
+                    <div class="aac-grid" id="aac-grid-container">
+                        <!-- Primary Health Requests -->
+                        <button class="aac-card scan-item" id="btn-aac-toilet" data-speech="ต้องการปวดปัสสาวะ" onclick="triggerAAC('toilet', 'ต้องการปัสสาวะ/ห้องน้ำ', '🚾')">
+                            <div class="card-icon"><i class="fa-solid fa-restroom"></i></div>
+                            <span class="card-text">ปวดปัสสาวะ</span>
+                        </button>
+                        
+                        <button class="aac-card scan-item" id="btn-aac-pain" data-speech="ปวดแผล ขอยาแก้ปวด" onclick="triggerAAC('pain', 'ปวดแผล ขอยาบรรเทา', '💊')">
+                            <div class="card-icon"><i class="fa-solid fa-capsules"></i></div>
+                            <span class="card-text">ปวดแผล ขอยา</span>
+                        </button>
+                        
+                        <button class="aac-card scan-item danger-glow" id="btn-aac-sos" data-speech="ฉุกเฉิน ช่วยด้วย" onclick="triggerAAC('sos', 'สัญญาณฉุกเฉิน ร้องขอพยาบาลด่วน!', '🚨')">
+                            <div class="card-icon"><i class="fa-solid fa-circle-exclamation fa-beat-fast"></i></div>
+                            <span class="card-text">🚨 ฉุกเฉิน</span>
+                        </button>
+                        
+                        <!-- Daily Comfort Requests -->
+                        <button class="aac-card scan-item" id="btn-aac-water" data-speech="หิวน้ำ ขอดื่มน้ำหน่อย" onclick="triggerAAC('water', 'ต้องการดื่มน้ำ', '💧')">
+                            <div class="card-icon"><i class="fa-solid fa-droplet"></i></div>
+                            <span class="card-text">ขอดื่มน้ำ</span>
+                        </button>
+                        
+                        <button class="aac-card scan-item" id="btn-aac-turn" data-speech="ปวดเมื่อยตัว ช่วยพลิกตัวให้หน่อย" onclick="triggerAAC('turn', 'ต้องการให้พยาบาลช่วยพลิกตัว', '🔄')">
+                            <div class="card-icon"><i class="fa-solid fa-arrows-rotate"></i></div>
+                            <span class="card-text">ช่วยพลิกตัว</span>
+                        </button>
+
+                        <button class="aac-card scan-item" id="btn-aac-hot" data-speech="รู้สึกร้อน ขอเปิดพัดลม" onclick="triggerAAC('hot', 'รู้สึกร้อน ต้องการพัดลม/แอร์', '🥵')">
+                            <div class="card-icon"><i class="fa-solid fa-temperature-arrow-up"></i></div>
+                            <span class="card-text">รู้สึกร้อน</span>
+                        </button>
+                        
+                        <!-- Smart Room Controls (Send API / Webhook Requests) -->
+                        <button class="aac-card scan-item iot-card" id="btn-aac-light" onclick="triggerSmartDevice('light')">
+                            <div class="card-icon" id="icon-light"><i class="fa-solid fa-lightbulb"></i></div>
+                            <span class="card-text" id="text-light">เปิด/ปิด ไฟห้อง</span>
+                        </button>
+                        
+                        <button class="aac-card scan-item iot-card" id="btn-aac-fan" onclick="triggerSmartDevice('fan')">
+                            <div class="card-icon" id="icon-fan"><i class="fa-solid fa-fan"></i></div>
+                            <span class="card-text" id="text-fan">เปิด/ปิด พัดลม</span>
+                        </button>
+                    </div>
+
+                    <!-- Custom Message Input Box for Spelled Communication -->
+                    <div class="spelled-message-box">
+                        <input type="text" id="custom-message-input" placeholder="พิมพ์ข้อความที่นี่..." readonly>
+                        <button class="btn btn-primary" onclick="speakCustomMessage()"><i class="fa-solid fa-volume-high"></i> ออกเสียงพูด</button>
+                        <button class="btn btn-outline" onclick="clearCustomMessage()">ล้าง</button>
+                    </div>
+
+                    <!-- Visual Smart Room Simulator Grid -->
+                    <div class="smart-room-simulation">
+                        <h3><i class="fa-solid fa-house-laptop"></i> จำลองสถานะห้องพักผู้ป่วย (Smart Room Simulator)</h3>
+                        <div class="sim-room-layout">
+                            <div class="room-item" id="sim-light-bulb">
+                                <i class="fa-solid fa-lightbulb"></i>
+                                <span>ไฟเพดาน (Off)</span>
+                            </div>
+                            <div class="room-item" id="sim-fan">
+                                <i class="fa-solid fa-fan"></i>
+                                <span>พัดลมระบาย (Off)</span>
+                            </div>
+                            <div class="room-item" id="sim-plug">
+                                <i class="fa-solid fa-plug"></i>
+                                <span>ปลั๊กอัจฉริยะ IoT</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </section>
+        
+        <!-- 2. NURSE CENTRAL MONITOR TAB -->
+        <section id="nurse-monitor" class="tab-content">
+            <div class="nurse-grid">
+                
+                <!-- Beds Overview Dashboard -->
+                <div class="beds-dashboard">
+                    <h2><i class="fa-solid fa-circle-nodes"></i> แผงควบคุมและสังเกตการณ์เตียงคนไข้ (Ward 4A Central Monitor)</h2>
+                    
+                    <div class="beds-grid">
+                        
+                        <!-- BED A1 (Live Feed Connect) -->
+                        <div class="bed-card active-live" id="bed-card-a1">
+                            <div class="bed-header">
+                                <span class="bed-id">เตียง A1 (คนไข้หลัก)</span>
+                                <span class="bed-badge online">LIVE AI</span>
+                            </div>
+                            <div class="bed-body">
+                                <div class="bed-status-item">
+                                    <span class="label">ท่าทางการนอน:</span>
+                                    <strong id="nurse-bed1-pose">นอนหงาย</strong>
+                                </div>
+                                <div class="bed-status-item">
+                                    <span class="label">เวลาสะสม (ท่าเดิม):</span>
+                                    <div class="timer-warning-box">
+                                        <span id="nurse-bed1-timer" class="timer-countdown font-mono">01:45:12</span>
+                                        <button class="btn btn-xs" onclick="resetBedsoreTimer('A1')">ยืนยันพลิกตัว</button>
+                                    </div>
+                                </div>
+                                <div class="bed-status-item">
+                                    <span class="label">สถานะความปลอดภัย:</span>
+                                    <span class="safe-badge green" id="nurse-bed1-safety">ปกติ</span>
+                                </div>
+                            </div>
+                            <div class="bed-footer">
+                                <div class="bed-recent-req" id="nurse-bed1-request">สถานะล่าสุด: นอนพักผ่อน</div>
+                            </div>
+                        </div>
+                        
+                        <!-- BED A2 (Simulated) -->
+                        <div class="bed-card" id="bed-card-a2">
+                            <div class="bed-header">
+                                <span class="bed-id">เตียง A2 (ผู้ป่วยไอจาม)</span>
+                                <span class="bed-badge offline">จำลอง</span>
+                            </div>
+                            <div class="bed-body">
+                                <div class="bed-status-item">
+                                    <span class="label">ท่าทางการนอน:</span>
+                                    <strong>นอนหงาย</strong>
+                                </div>
+                                <div class="bed-status-item">
+                                    <span class="label">เวลาสะสม (ท่าเดิม):</span>
+                                    <div class="timer-warning-box">
+                                        <span class="timer-countdown font-mono text-danger">02:12:45</span>
+                                        <button class="btn btn-xs btn-warning" onclick="resetBedsoreTimer('A2')">ยืนยันพลิกตัว</button>
+                                    </div>
+                                </div>
+                                <div class="bed-status-item">
+                                    <span class="label">สถานะความปลอดภัย:</span>
+                                    <span class="safe-badge red animate-flash">นอนทับแผลเกิน 2 ชม.</span>
+                                </div>
+                            </div>
+                            <div class="bed-footer">
+                                <div class="bed-recent-req">สถานะล่าสุด: ตะแคงขวาล่าสุด 2 ชม. ก่อน</div>
+                            </div>
+                        </div>
+
+                        <!-- BED A3 (Simulated) -->
+                        <div class="bed-card" id="bed-card-a3">
+                            <div class="bed-header">
+                                <span class="bed-id">เตียง A3 (ฟื้นฟูกายภาพ)</span>
+                                <span class="bed-badge offline">จำลอง</span>
+                            </div>
+                            <div class="bed-body">
+                                <div class="bed-status-item">
+                                    <span class="label">ท่าทางการนอน:</span>
+                                    <strong>นั่งพิงหัวเตียง</strong>
+                                </div>
+                                <div class="bed-status-item">
+                                    <span class="label">เวลาสะสม (ท่าเดิม):</span>
+                                    <div class="timer-warning-box">
+                                        <span class="timer-countdown font-mono">00:32:15</span>
+                                        <button class="btn btn-xs" onclick="resetBedsoreTimer('A3')">ยืนยันพลิกตัว</button>
+                                    </div>
+                                </div>
+                                <div class="bed-status-item">
+                                    <span class="label">สถานะความปลอดภัย:</span>
+                                    <span class="safe-badge green">ปกติ</span>
+                                </div>
+                            </div>
+                            <div class="bed-footer">
+                                <div class="bed-recent-req">สถานะล่าสุด: ขอยาแก้ปวดเมื่อ 30 นาทีที่แล้ว</div>
+                            </div>
+                        </div>
+
+                        <!-- BED A4 (Simulated) -->
+                        <div class="bed-card" id="bed-card-a4">
+                            <div class="bed-header">
+                                <span class="bed-id">เตียง A4 (ผู้ป่วยวิกฤต)</span>
+                                <span class="bed-badge offline">จำลอง</span>
+                            </div>
+                            <div class="bed-body">
+                                <div class="bed-status-item">
+                                    <span class="label">ท่าทางการนอน:</span>
+                                    <strong>นอนตะแคงซ้าย</strong>
+                                </div>
+                                <div class="bed-status-item">
+                                    <span class="label">เวลาสะสม (ท่าเดิม):</span>
+                                    <div class="timer-warning-box">
+                                        <span class="timer-countdown font-mono">01:05:00</span>
+                                        <button class="btn btn-xs" onclick="resetBedsoreTimer('A4')">ยืนยันพลิกตัว</button>
+                                    </div>
+                                </div>
+                                <div class="bed-status-item">
+                                    <span class="label">สถานะความปลอดภัย:</span>
+                                    <span class="safe-badge green">ปกติ</span>
+                                </div>
+                            </div>
+                            <div class="bed-footer">
+                                <div class="bed-recent-req">สถานะล่าสุด: หลับพักผ่อน</div>
+                            </div>
+                        </div>
+
+                    </div>
+                </div>
+                
+                <!-- Central Log & System Alerts -->
+                <div class="panel log-panel">
+                    <div class="panel-header">
+                        <h2><i class="fa-solid fa-clock-rotate-left"></i> ประวัติแจ้งเตือนจากห้องผู้ป่วย (Event Alert Log - Edge Out)</h2>
+                        <button class="btn btn-xs btn-outline" onclick="clearEventLogs()">ล้างประวัติ</button>
+                    </div>
+                    
+                    <div class="log-list" id="nurse-event-logs">
+                        <div class="log-entry system">
+                            <span class="time">[15:15:00]</span>
+                            <span class="text">ระบบเริ่มเซิร์ฟเวอร์จำลอง IoT LAN Node สำเร็จ</span>
+                        </div>
+                        <div class="log-entry danger animate-flash">
+                            <span class="time">[15:15:05]</span>
+                            <span class="text">เตียง A2: นอนท่าเดิมเกิน 2 ชั่วโมง! กรุณาพลิกตัว</span>
+                        </div>
+                        <div class="log-entry info">
+                            <span class="time">[15:15:12]</span>
+                            <span class="text">เตียง A3: ขอยาแก้ปวด (ส่งสัญญาณออกตัวกระบอกบรรจุยา)</span>
+                        </div>
+                    </div>
+                </div>
+                
+            </div>
+        </section>
+        
+        <!-- 3. SYSTEM CONFIG/SETTINGS TAB -->
+        <section id="system-settings" class="tab-content">
+            <div class="settings-grid">
+                
+                <!-- AI & Tracking Settings -->
+                <div class="panel">
+                    <div class="panel-header">
+                        <h2><i class="fa-solid fa-sliders"></i> ตั้งค่าการประมวลผลโมเดล (AI Calibration Settings)</h2>
+                    </div>
+                    <div class="settings-form">
+                        <div class="form-group">
+                            <label for="set-dwell-time">เวลาในการจ้องค้างเพื่อคลิก (Dwell Clicking Delay - วินาที)</label>
+                            <input type="number" id="set-dwell-time" min="0.5" max="5.0" step="0.1" value="1.5">
+                            <small>ปรับเพื่อให้เหมาะสมกับการตอบสนองและทิศทางการหันศีรษะของคนไข้</small>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="set-head-sensitivity">ความไวของเคอร์เซอร์หันศีรษะ (Head Pose Tracker Sensitivity)</label>
+                            <input type="range" id="set-head-sensitivity" min="5" max="30" value="15">
+                            <small>ค่าสูงขึ้น เคอร์เซอร์จะขยับเร็วและไกลขึ้นเมื่อเอียงศีรษะเล็กน้อย</small>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="set-audio-sens">ระดับความดังดักจับเสียงไอ (Audio Sensitivity Threshold - dB)</label>
+                            <input type="range" id="set-audio-sens" min="-50" max="-10" value="-30">
+                            <small>หากสภาพแวดล้อมมีเสียงดังรบกวนมาก ควรตั้งค่าให้ตัวเลขสูงขึ้น (ติดลบน้อยลง)</small>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="set-pose-check">ความถี่ยืนยันท่าทางตกเตียงของ AI (Pose Validation Interval - วินาที)</label>
+                            <input type="number" id="set-pose-check" min="1" max="10" value="2">
+                            <small>หน่วงเวลาให้แน่ใจก่อนทริกเกอร์เตือนตกเตียง เพื่อเลี่ยง false alarm</small>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Smart Home & Webhook API Settings -->
+                <div class="panel">
+                    <div class="panel-header">
+                        <h2><i class="fa-solid fa-network-wired"></i> การเชื่อมต่อ IoT & Webhook (Smart Home Integration)</h2>
+                    </div>
+                    <div class="settings-form">
+                        <div class="form-group">
+                            <label for="url-light-on">HTTP API เปิดไฟห้อง (Light ON URL Endpoint)</label>
+                            <input type="url" id="url-light-on" placeholder="http://192.168.1.150/api/switch/light/on" value="http://192.168.1.100/smart/light/on">
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="url-light-off">HTTP API ปิดไฟห้อง (Light OFF URL Endpoint)</label>
+                            <input type="url" id="url-light-off" placeholder="http://192.168.1.150/api/switch/light/off" value="http://192.168.1.100/smart/light/off">
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="url-fan-on">HTTP API เปิดพัดลม (Fan ON URL Endpoint)</label>
+                            <input type="url" id="url-fan-on" placeholder="http://192.168.1.150/api/switch/fan/on" value="http://192.168.1.100/smart/fan/on">
+                        </div>
+
+                        <div class="form-group">
+                            <label for="url-fan-off">HTTP API ปิดพัดลม (Fan OFF URL Endpoint)</label>
+                            <input type="url" id="url-fan-off" placeholder="http://192.168.1.150/api/switch/fan/off" value="http://192.168.1.100/smart/fan/off">
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="url-nurse-alert">Webhook ไปยังระบบโรงพยาบาลส่วนกลาง (Central API Alert Endpoint)</label>
+                            <input type="url" id="url-nurse-alert" placeholder="http://hospital-lan/api/beds/alert" value="http://hospital-lan/api/beds/alert">
+                            <small>ใช้สำหรับยิง HTTP POST แจ้งเตือนเมื่อผู้ป่วยตกเตียง ไอสำลัก หรือกดขอความช่วยเหลือ</small>
+                        </div>
+                        
+                        <button class="btn btn-primary btn-block" onclick="saveSettings()">บันทึกการตั้งค่าทั้งหมด</button>
+                    </div>
+                </div>
+
+            </div>
+        </section>
+
+    </main>
+
+    <!-- Audio tags for alerts -->
+    <audio id="siren-sound" src="https://assets.mixkit.co/active_storage/sfx/993/993-84.wav" preload="auto" loop></audio>
+    <audio id="click-sound" src="https://assets.mixkit.co/active_storage/sfx/2568/2568-84.wav" preload="auto"></audio>
+    <audio id="warning-sound" src="https://assets.mixkit.co/active_storage/sfx/2190/2190-84.wav" preload="auto"></audio>
+
+    <!-- App Script -->
+    <script src="app.js"></script>
+</body>
+</html>
