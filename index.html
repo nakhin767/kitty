@@ -1,479 +1,909 @@
 <!DOCTYPE html>
 <html lang="th">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="SabaiCare - ระบบดูแลผู้ป่วยอัมพาต ผู้ป่วยติดเตียง และผู้ป่วยเส้นเลือดในสมองแตก ด้วยเทคโนโลยี Edge AI, ตรวจจับพิกัดใบหน้าและท่าทาง และระบบดักจับเสียงสำลักอัตโนมัติ">
-    <title>SabaiCare - ระบบผู้ช่วยดูแลผู้ป่วยอัจฉริยะ (Edge AI Assistive System)</title>
-    
-    <!-- Google Fonts -->
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@300;400;500;600;700&family=Outfit:wght@400;600;700;800&display=swap" rel="stylesheet">
-    
-    <!-- FontAwesome for icons -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    
-    <!-- Stylesheet Link -->
-    <link rel="stylesheet" href="style.css">
-    
-    <!-- MediaPipe CDN scripts -->
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js" crossorigin="anonymous"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js" crossorigin="anonymous"></script>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>NeuroTwin — Digital Twin สำหรับผู้ป่วยโรคหลอดเลือดสมอง</title>
+  <meta name="description" content="NeuroTwin ระบบจำลองดิจิทัลสำหรับผู้ป่วยโรคหลอดเลือดสมอง ทำนายการฟื้นตัวและวางแผนการรักษาด้วย AI" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700;800&family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
 </head>
-<body class="dark-mode">
+<body>
+  <canvas id="neural-canvas"></canvas>
 
-    <!-- Global Emergency Alert Indicator (Top Banner) -->
-    <div id="global-emergency-banner" class="emergency-banner hidden">
-        <div class="banner-content">
-            <i class="fa-solid fa-triangle-exclamation fa-beat"></i>
-            <span id="emergency-banner-text">เตือนภัยฉุกเฉิน: เตียง A1 ตรวจพบเสียงสำลักไอผิดปกติ!</span>
-            <button id="btn-dismiss-global-alert" class="btn btn-danger">ปิดรับทราบ (Dismiss)</button>
+  <!-- ===== LANDING PAGE ===== -->
+  <section id="page-landing" class="page active">
+    <nav class="navbar">
+      <div class="nav-logo">
+        <div class="logo-icon">
+          <svg viewBox="0 0 40 40" fill="none">
+            <circle cx="20" cy="20" r="18" stroke="url(#grad1)" stroke-width="2"/>
+            <path d="M12 20 Q20 8 28 20 Q20 32 12 20Z" fill="url(#grad2)" opacity="0.8"/>
+            <circle cx="20" cy="20" r="3" fill="#fff"/>
+            <defs>
+              <linearGradient id="grad1" x1="0" y1="0" x2="40" y2="40">
+                <stop offset="0%" stop-color="#6C63FF"/>
+                <stop offset="100%" stop-color="#00D4FF"/>
+              </linearGradient>
+              <linearGradient id="grad2" x1="0" y1="0" x2="40" y2="40">
+                <stop offset="0%" stop-color="#6C63FF"/>
+                <stop offset="100%" stop-color="#00D4FF"/>
+              </linearGradient>
+            </defs>
+          </svg>
         </div>
+        <span class="logo-text">NeuroTwin</span>
+      </div>
+      <div class="nav-links">
+        <a href="#" class="nav-link">เกี่ยวกับ</a>
+        <a href="#" class="nav-link">วิธีใช้งาน</a>
+        <a href="#" class="nav-link" onclick="showPricingSection(); return false;">ราคา</a>
+      </div>
+      <div class="nav-right">
+        <div id="plan-badge" class="plan-badge free-badge hidden">Free</div>
+        <button class="btn-upgrade-nav" id="btn-upgrade-nav" onclick="openPricingModal()">
+          <span>⚡ อัปเกรด</span>
+        </button>
+      </div>
+    </nav>
+
+    <div class="hero-container">
+      <div class="hero-badge">
+        <span class="badge-dot"></span>
+        <span>AI-Powered Digital Twin Technology</span>
+      </div>
+      <h1 class="hero-title">
+        <span class="gradient-text">NeuroTwin</span>
+        <br />จำลองการฟื้นตัวของ<br />ผู้ป่วยโรคหลอดเลือดสมอง
+      </h1>
+      <p class="hero-subtitle">
+        ระบบ Digital Twin ที่ใช้ AI วิเคราะห์ข้อมูลสุขภาพและการเคลื่อนไหว<br />
+        เพื่อทำนายการฟื้นตัวและวางแผนการรักษาได้อย่างแม่นยำเฉพาะบุคคล
+      </p>
+
+      <div class="hero-stats">
+        <div class="stat-item">
+          <span class="stat-number">94%</span>
+          <span class="stat-label">ความแม่นยำในการทำนาย</span>
+        </div>
+        <div class="stat-divider"></div>
+        <div class="stat-item">
+          <span class="stat-number">3x</span>
+          <span class="stat-label">เร็วกว่าการรักษาทั่วไป</span>
+        </div>
+        <div class="stat-divider"></div>
+        <div class="stat-item">
+          <span class="stat-number">5K+</span>
+          <span class="stat-label">ผู้ป่วยที่ใช้งาน</span>
+        </div>
+      </div>
+
+      <div class="hero-actions">
+        <button id="btn-start" class="btn-primary" onclick="goToStep(1)">
+          <span>เริ่มต้นใช้งาน</span>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+            <path d="M5 12h14M12 5l7 7-7 7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </button>
+        <button class="btn-secondary" onclick="showHowItWorks()">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+            <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2"/>
+            <path d="M10 8.5L15 12l-5 3.5V8.5z" fill="currentColor"/>
+          </svg>
+          <span>ดูวิธีการทำงาน</span>
+        </button>
+      </div>
+
+      <!-- How it works section -->
+      <div id="how-it-works" class="how-it-works hidden">
+        <h2 class="section-title">ขั้นตอนการทำงานของ NeuroTwin</h2>
+        <div class="steps-grid">
+          <div class="step-card">
+            <div class="step-number">01</div>
+            <div class="step-icon">📋</div>
+            <h3>ข้อมูลสุขภาพ</h3>
+            <p>กรอกข้อมูลพื้นฐาน อายุ เพศ น้ำหนัก ระดับความรุนแรงของโรค</p>
+          </div>
+          <div class="step-card">
+            <div class="step-number">02</div>
+            <div class="step-icon">🎥</div>
+            <h3>บันทึกการเคลื่อนไหว</h3>
+            <p>ทดสอบการยกแขน ทำมือ การเดิน และการยิ้มผ่านกล้องสมาร์ตโฟน</p>
+          </div>
+          <div class="step-card">
+            <div class="step-number">03</div>
+            <div class="step-icon">🧠</div>
+            <h3>AI วิเคราะห์</h3>
+            <p>ระบบ AI ประมวลผลข้อมูลทั้งหมดเพื่อสร้าง Digital Twin ของคุณ</p>
+          </div>
+          <div class="step-card">
+            <div class="step-number">04</div>
+            <div class="step-icon">🔮</div>
+            <h3>จำลองการฟื้นตัว</h3>
+            <p>ทำนายการฟื้นตัวในอีก 1, 3 และ 6 เดือนข้างหน้า</p>
+          </div>
+          <div class="step-card">
+            <div class="step-number">05</div>
+            <div class="step-icon">📊</div>
+            <h3>แผนการรักษา</h3>
+            <p>รับคำแนะนำการฝึกเฉพาะบุคคลสำหรับแต่ละช่วงเวลา</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Feature cards -->
+      <div class="features-grid">
+        <div class="feature-card">
+          <div class="feature-icon">🧠</div>
+          <h3>Digital Twin AI</h3>
+          <p>จำลองร่างกายดิจิทัลด้วย Neural Network</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">📈</div>
+          <h3>ทำนายการฟื้นตัว</h3>
+          <p>คาดการณ์ล่วงหน้า 1-6 เดือนด้วยความแม่นยำสูง</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">🎯</div>
+          <h3>แผนเฉพาะบุคคล</h3>
+          <p>คำแนะนำการรักษาที่ออกแบบมาเฉพาะสำหรับคุณ</p>
+        </div>
+      </div>
+
+      <!-- ===== PRICING SECTION ===== -->
+      <div id="pricing-section" class="pricing-section">
+        <div class="pricing-eyebrow">เลือกแพ็กเกจที่เหมาะกับคุณ</div>
+        <p class="pricing-subtitle">เริ่มต้นการดูแลที่แม่นยำและมีประสิทธิภาพ เพื่ออนาคตที่ดีกว่าของคุณ</p>
+
+        <div class="pricing-cards">
+          <!-- TRIAL SUBSCRIPTION -->
+          <div class="pricing-card" id="plan-trial">
+            <div class="plan-header">
+              <div class="plan-name">ทดลองใช้ฟรี 3 วัน</div>
+              <div class="plan-price">
+                <span class="price-currency">฿</span>
+                <span class="price-amount">199</span>
+              </div>
+              <div class="plan-badge-tag">ทดลองใช้งาน 3 วัน</div>
+            </div>
+            <ul class="plan-features">
+              <li><span class="feat-icon">✓</span> เข้าถึงฟีเจอร์ทั้งหมด</li>
+              <li><span class="feat-icon">✓</span> จำลอง Digital Twin ได้ไม่จำกัด</li>
+              <li><span class="feat-icon">✓</span> วิเคราะห์และทำนายผลการฟื้นตัว</li>
+              <li><span class="feat-icon">✓</span> ยกเลิกได้ทุกเมื่อ</li>
+            </ul>
+            <button class="plan-btn plan-btn-trial" onclick="openPaymentModal('trial')">เริ่มทดลองใช้ฟรี</button>
+            <div class="plan-under-btn">฿199 หลังจาก 3 วัน หากไม่ยกเลิก</div>
+          </div>
+
+          <!-- LIFETIME -->
+          <div class="pricing-card card-lifetime featured" id="plan-lifetime">
+            <div class="lifetime-recommend-badge">⭐ แนะนำ</div>
+            <div class="plan-header">
+              <div class="plan-name">แพ็กเกจถาวร (Lifetime)</div>
+              <div class="plan-price">
+                <span class="price-currency">฿</span>
+                <span class="price-amount">3,999</span>
+              </div>
+              <div class="plan-badge-tag">ชำระครั้งเดียว ใช้งานได้ตลอดชีพ</div>
+            </div>
+            <ul class="plan-features">
+              <li><span class="feat-icon">✓</span> เข้าถึงฟีเจอร์ทั้งหมดตลอดชีพ</li>
+              <li><span class="feat-icon">✓</span> จำลอง Digital Twin ได้ไม่จำกัด</li>
+              <li><span class="feat-icon">✓</span> อัปเดตฟีเจอร์ใหม่ฟรีตลอดชีพ</li>
+              <li><span class="feat-icon">✓</span> วิเคราะห์และทำนายผลการฟื้นตัวไม่จำกัด</li>
+              <li><span class="feat-icon">✓</span> ไม่มีโฆษณา</li>
+              <li><span class="feat-icon">✓</span> บริการสนับสนุนพิเศษ</li>
+            </ul>
+            <button class="plan-btn plan-btn-lifetime" onclick="openPaymentModal('lifetime')">ซื้อแพ็กเกจถาวร</button>
+            <div class="plan-under-btn font-cyan">ชำระครั้งเดียว จบ ไม่ต้องจ่ายเพิ่ม</div>
+          </div>
+        </div>
+
+        <div class="compare-plans-link" onclick="openBenefitsModal()">
+          <span>เปรียบเทียบแพ็กเกจ</span>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-left: 4px; vertical-align: middle;">
+            <path d="M19 9l-7 7-7-7" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </div>
+
+        <div class="pricing-guarantee-badges">
+          <div class="badge-item">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+            </svg>
+            <span>รับประกันความพึงพอใจ 7 วัน<br><small>หากไม่พอใจ ยินดีคืนเงินเต็มจำนวน</small></span>
+          </div>
+          <div class="badge-item">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+              <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+            </svg>
+            <span>ชำระเงินปลอดภัย 100%<br><small>ข้อมูลของคุณปลอดภัยด้วยการเข้ารหัสระดับสากล</small></span>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ===== STEP WRAPPER ===== -->
+  <section id="page-steps" class="page">
+    <!-- Progress Bar -->
+    <div class="progress-wrapper">
+      <div class="progress-nav">
+        <button class="back-btn" id="back-btn" onclick="goBack()">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+            <path d="M19 12H5M12 5l-7 7 7 7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          ย้อนกลับ
+        </button>
+        <div class="logo-small">
+          <span class="logo-text-small">NeuroTwin</span>
+        </div>
+        <div class="step-indicator" id="step-indicator">ขั้นตอนที่ 1 / 4</div>
+      </div>
+      <div class="progress-bar-outer">
+        <div class="progress-bar-inner" id="progress-bar" style="width:25%"></div>
+      </div>
     </div>
 
-    <!-- Header / Navigation Bar -->
-    <header class="app-header">
-        <div class="brand">
-            <div class="logo-icon"><i class="fa-solid fa-heart-pulse"></i></div>
-            <div class="brand-text">
-                <h1>SabaiCare</h1>
-                <span class="sub-logo">Edge AI Smart Caregiver Platform</span>
-            </div>
+    <!-- STEP 1: Health Info -->
+    <div id="step-1" class="step-content active">
+      <div class="step-header">
+        <div class="step-badge">ขั้นตอนที่ 1</div>
+        <h2 class="step-title">ข้อมูลสุขภาพพื้นฐาน</h2>
+        <p class="step-desc">กรอกข้อมูลส่วนตัวและประวัติการแพทย์เพื่อสร้าง Digital Twin ที่แม่นยำ</p>
+      </div>
+
+      <div class="form-grid">
+        <div class="form-group">
+          <label for="patient-name">ชื่อ-นามสกุล</label>
+          <input type="text" id="patient-name" placeholder="กรอกชื่อ-นามสกุล" class="form-input" />
         </div>
-        
-        <!-- Live Connection Status -->
-        <div class="system-status">
-            <span class="status-indicator online" id="net-status-dot"></span>
-            <span class="status-text" id="net-status-text">LAN Node Connected (Simulated)</span>
+        <div class="form-group">
+          <label for="patient-age">อายุ (ปี)</label>
+          <input type="number" id="patient-age" placeholder="เช่น 65" min="1" max="120" class="form-input" />
         </div>
-        
-        <nav class="nav-tabs">
-            <button class="nav-btn active" id="tab-patient" onclick="switchTab('patient-station')">
-                <i class="fa-solid fa-bed-pulse"></i> ข้างเตียงคนไข้ (Patient Station)
-            </button>
-            <button class="nav-btn" id="tab-nurse" onclick="switchTab('nurse-monitor')">
-                <i class="fa-solid fa-hospital-user"></i> จอมอนิเตอร์พยาบาล (Nurse Counter)
-                <span class="badge hidden" id="nurse-alert-badge">0</span>
-            </button>
-            <button class="nav-btn" id="tab-settings" onclick="switchTab('system-settings')">
-                <i class="fa-solid fa-gears"></i> ตั้งค่าระบบ (Settings)
-            </button>
-        </nav>
-    </header>
+        <div class="form-group">
+          <label>เพศ</label>
+          <div class="radio-group">
+            <label class="radio-card" id="gender-male-label">
+              <input type="radio" name="gender" id="gender-male" value="male" />
+              <span class="radio-icon">👨</span>
+              <span>ชาย</span>
+            </label>
+            <label class="radio-card" id="gender-female-label">
+              <input type="radio" name="gender" id="gender-female" value="female" />
+              <span class="radio-icon">👩</span>
+              <span>หญิง</span>
+            </label>
+          </div>
+        </div>
+        <div class="form-group">
+          <label for="patient-weight">น้ำหนัก (กก.)</label>
+          <input type="number" id="patient-weight" placeholder="เช่น 65" min="20" max="200" class="form-input" />
+        </div>
+        <div class="form-group">
+          <label for="patient-height">ส่วนสูง (ซม.)</label>
+          <input type="number" id="patient-height" placeholder="เช่น 165" min="100" max="250" class="form-input" />
+        </div>
+        <div class="form-group">
+          <label for="stroke-date">วันที่เกิด Stroke</label>
+          <input type="date" id="stroke-date" class="form-input" />
+        </div>
 
-    <!-- Main Container -->
-    <main class="app-container">
-        
-        <!-- 1. PATIENT STATION TAB -->
-        <section id="patient-station" class="tab-content active">
-            <div class="station-grid">
-                
-                <!-- Left Column: Camera and AI Processing -->
-                <div class="panel ai-camera-panel">
-                    <div class="panel-header">
-                        <h2><i class="fa-solid fa-video"></i> กล้องตรวจจับอัจฉริยะ (Edge AI Camera Feed)</h2>
-                        <div class="status-group">
-                            <span class="badge-status pose-status-idle" id="pose-label">ตรวจจับท่าทาง: รอกล้อง...</span>
-                        </div>
-                    </div>
-                    
-                    <div class="camera-container">
-                        <!-- Video for WebRTC Camera -->
-                        <video id="video-input" class="video-element" autoplay playsinline muted></video>
-                        <!-- Canvas overlay for MediaPipe mesh drawing -->
-                        <canvas id="canvas-output" class="canvas-element"></canvas>
-                        
-                        <!-- Face Pointer indicator overlay -->
-                        <div id="face-cursor" class="face-cursor-dot hidden">
-                            <svg class="cursor-ring" viewBox="0 0 40 40">
-                                <circle class="bg" cx="20" cy="20" r="18"></circle>
-                                <circle class="progress" id="cursor-progress" cx="20" cy="20" r="18"></circle>
-                            </svg>
-                        </div>
-
-                        <!-- Calibration / Guide Box overlay for bed positions -->
-                        <div class="bed-bounding-box" id="bed-bound-guide">
-                            <span class="box-label">โซนเฝ้าระวังเตียงนอน (Bed Safety Zone)</span>
-                        </div>
-                        
-                        <!-- Simulated Patient Animation (Fallback when no Camera is active) -->
-                        <div id="simulated-patient-overlay" class="sim-patient-view">
-                            <div class="sim-avatar">
-                                <i class="fa-solid fa-user-injured fa-fade"></i>
-                            </div>
-                            <div class="sim-status">
-                                <h3>ระบบสาธิตเสมือนจริง (Camera Offline)</h3>
-                                <p>กำลังจำลองสัญญาณจากกล้องหัวเตียง A1</p>
-                                <div class="sim-controls">
-                                    <button class="btn btn-sm btn-outline" onclick="simulatePatientAction('sit-up')">จำลอง: ลุกนั่ง</button>
-                                    <button class="btn btn-sm btn-outline" onclick="simulatePatientAction('out-of-bed')">จำลอง: ขาออกนอกเตียง</button>
-                                    <button class="btn btn-sm btn-outline" onclick="simulatePatientAction('normal')">จำลอง: ท่าปกติ</button>
-                                    <button class="btn btn-sm btn-outline" onclick="simulatePatientAction('turn-left')">จำลอง: นอนตะแคงซ้าย</button>
-                                    <button class="btn btn-sm btn-outline" onclick="simulatePatientAction('turn-right')">จำลอง: นอนตะแคงขวา</button>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <!-- Audio Threshold Meter and Control -->
-                    <div class="audio-monitor-box">
-                        <div class="audio-info">
-                            <span class="label"><i class="fa-solid fa-microphone-lines"></i> ความดังเสียงไมโครโฟนหัวเตียง (Mic Level)</span>
-                            <span class="val" id="audio-db-value">-∞ dB</span>
-                        </div>
-                        <div class="audio-meter-bar">
-                            <div class="audio-level-fill" id="audio-level-bar" style="width: 0%"></div>
-                            <div class="audio-threshold-line" id="audio-threshold-indicator" style="left: 65%" title="เกณฑ์ส่งสัญญาณเสียงดัง"></div>
-                        </div>
-                        <div class="audio-status-row">
-                            <span class="mic-toggle-label" id="mic-status-text">ปิดระบบดักเสียงสำลัก</span>
-                            <div class="event-counter">
-                                ตรวจพบเสียงสะดุดสะสม: <strong id="cough-count-badge" class="badge-count">0</strong> / 3 ครั้ง
-                            </div>
-                            <button class="btn btn-sm" id="btn-toggle-mic" onclick="toggleMicrophone()">
-                                <i class="fa-solid fa-microphone-slash"></i> เปิดไมโครโฟน
-                            </button>
-                        </div>
-                    </div>
-                    
-                    <!-- Camera Calibration and Mode selection -->
-                    <div class="camera-actions">
-                        <button class="btn btn-primary" id="btn-start-camera" onclick="startCamera()">
-                            <i class="fa-solid fa-camera"></i> เปิดกล้องจริง
-                        </button>
-                        <button class="btn btn-outline" id="btn-calibrate" onclick="calibrateFaceCenter()" disabled>
-                            <i class="fa-solid fa-arrows-to-eye"></i> Calibrate จุดเล็ง
-                        </button>
-                        <div class="switch-container">
-                            <span class="switch-label">สแกนอัตโนมัติ (Auto Scan)</span>
-                            <label class="switch">
-                                <input type="checkbox" id="chk-auto-scan" onchange="toggleAutoScan(this.checked)">
-                                <span class="slider round"></span>
-                            </label>
-                        </div>
-                    </div>
-                </div>
-                
-                <!-- Right Column: Near-Eye AAC Interface & Smart Room Simulation -->
-                <div class="panel aac-panel">
-                    <div class="panel-header">
-                        <h2><i class="fa-solid fa-tablet-screen-button"></i> หน้าจอข้างเตียงผู้ป่วย (Near-Eye AAC Interface)</h2>
-                        <span class="instruction-bubble">ควบคุมโดย: <strong>หันศีรษะเล็ง/กด Spacebar/คลิกหน้าจอ</strong></span>
-                    </div>
-                    
-                    <!-- AAC Grid buttons (Extra Large Target Areas) -->
-                    <div class="aac-grid" id="aac-grid-container">
-                        <!-- Primary Health Requests -->
-                        <button class="aac-card scan-item" id="btn-aac-toilet" data-speech="ต้องการปวดปัสสาวะ" onclick="triggerAAC('toilet', 'ต้องการปัสสาวะ/ห้องน้ำ', '🚾')">
-                            <div class="card-icon"><i class="fa-solid fa-restroom"></i></div>
-                            <span class="card-text">ปวดปัสสาวะ</span>
-                        </button>
-                        
-                        <button class="aac-card scan-item" id="btn-aac-pain" data-speech="ปวดแผล ขอยาแก้ปวด" onclick="triggerAAC('pain', 'ปวดแผล ขอยาบรรเทา', '💊')">
-                            <div class="card-icon"><i class="fa-solid fa-capsules"></i></div>
-                            <span class="card-text">ปวดแผล ขอยา</span>
-                        </button>
-                        
-                        <button class="aac-card scan-item danger-glow" id="btn-aac-sos" data-speech="ฉุกเฉิน ช่วยด้วย" onclick="triggerAAC('sos', 'สัญญาณฉุกเฉิน ร้องขอพยาบาลด่วน!', '🚨')">
-                            <div class="card-icon"><i class="fa-solid fa-circle-exclamation fa-beat-fast"></i></div>
-                            <span class="card-text">🚨 ฉุกเฉิน</span>
-                        </button>
-                        
-                        <!-- Daily Comfort Requests -->
-                        <button class="aac-card scan-item" id="btn-aac-water" data-speech="หิวน้ำ ขอดื่มน้ำหน่อย" onclick="triggerAAC('water', 'ต้องการดื่มน้ำ', '💧')">
-                            <div class="card-icon"><i class="fa-solid fa-droplet"></i></div>
-                            <span class="card-text">ขอดื่มน้ำ</span>
-                        </button>
-                        
-                        <button class="aac-card scan-item" id="btn-aac-turn" data-speech="ปวดเมื่อยตัว ช่วยพลิกตัวให้หน่อย" onclick="triggerAAC('turn', 'ต้องการให้พยาบาลช่วยพลิกตัว', '🔄')">
-                            <div class="card-icon"><i class="fa-solid fa-arrows-rotate"></i></div>
-                            <span class="card-text">ช่วยพลิกตัว</span>
-                        </button>
-
-                        <button class="aac-card scan-item" id="btn-aac-hot" data-speech="รู้สึกร้อน ขอเปิดพัดลม" onclick="triggerAAC('hot', 'รู้สึกร้อน ต้องการพัดลม/แอร์', '🥵')">
-                            <div class="card-icon"><i class="fa-solid fa-temperature-arrow-up"></i></div>
-                            <span class="card-text">รู้สึกร้อน</span>
-                        </button>
-                        
-                        <!-- Smart Room Controls (Send API / Webhook Requests) -->
-                        <button class="aac-card scan-item iot-card" id="btn-aac-light" onclick="triggerSmartDevice('light')">
-                            <div class="card-icon" id="icon-light"><i class="fa-solid fa-lightbulb"></i></div>
-                            <span class="card-text" id="text-light">เปิด/ปิด ไฟห้อง</span>
-                        </button>
-                        
-                        <button class="aac-card scan-item iot-card" id="btn-aac-fan" onclick="triggerSmartDevice('fan')">
-                            <div class="card-icon" id="icon-fan"><i class="fa-solid fa-fan"></i></div>
-                            <span class="card-text" id="text-fan">เปิด/ปิด พัดลม</span>
-                        </button>
-                    </div>
-
-                    <!-- Custom Message Input Box for Spelled Communication -->
-                    <div class="spelled-message-box">
-                        <input type="text" id="custom-message-input" placeholder="พิมพ์ข้อความที่นี่..." readonly>
-                        <button class="btn btn-primary" onclick="speakCustomMessage()"><i class="fa-solid fa-volume-high"></i> ออกเสียงพูด</button>
-                        <button class="btn btn-outline" onclick="clearCustomMessage()">ล้าง</button>
-                    </div>
-
-                    <!-- Visual Smart Room Simulator Grid -->
-                    <div class="smart-room-simulation">
-                        <h3><i class="fa-solid fa-house-laptop"></i> จำลองสถานะห้องพักผู้ป่วย (Smart Room Simulator)</h3>
-                        <div class="sim-room-layout">
-                            <div class="room-item" id="sim-light-bulb">
-                                <i class="fa-solid fa-lightbulb"></i>
-                                <span>ไฟเพดาน (Off)</span>
-                            </div>
-                            <div class="room-item" id="sim-fan">
-                                <i class="fa-solid fa-fan"></i>
-                                <span>พัดลมระบาย (Off)</span>
-                            </div>
-                            <div class="room-item" id="sim-plug">
-                                <i class="fa-solid fa-plug"></i>
-                                <span>ปลั๊กอัจฉริยะ IoT</span>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
+        <div class="form-group full-width">
+          <label>ระดับความรุนแรง (NIHSS Score)</label>
+          <div class="nihss-group">
+            <input type="range" id="nihss-score" min="0" max="42" value="10" class="range-input" oninput="updateNIHSS(this.value)" />
+            <div class="nihss-display">
+              <span class="nihss-value" id="nihss-value">10</span>
+              <span class="nihss-label" id="nihss-label">ระดับปานกลาง</span>
             </div>
-        </section>
-        
-        <!-- 2. NURSE CENTRAL MONITOR TAB -->
-        <section id="nurse-monitor" class="tab-content">
-            <div class="nurse-grid">
-                
-                <!-- Beds Overview Dashboard -->
-                <div class="beds-dashboard">
-                    <h2><i class="fa-solid fa-circle-nodes"></i> แผงควบคุมและสังเกตการณ์เตียงคนไข้ (Ward 4A Central Monitor)</h2>
-                    
-                    <div class="beds-grid">
-                        
-                        <!-- BED A1 (Live Feed Connect) -->
-                        <div class="bed-card active-live" id="bed-card-a1">
-                            <div class="bed-header">
-                                <span class="bed-id">เตียง A1 (คนไข้หลัก)</span>
-                                <span class="bed-badge online">LIVE AI</span>
-                            </div>
-                            <div class="bed-body">
-                                <div class="bed-status-item">
-                                    <span class="label">ท่าทางการนอน:</span>
-                                    <strong id="nurse-bed1-pose">นอนหงาย</strong>
-                                </div>
-                                <div class="bed-status-item">
-                                    <span class="label">เวลาสะสม (ท่าเดิม):</span>
-                                    <div class="timer-warning-box">
-                                        <span id="nurse-bed1-timer" class="timer-countdown font-mono">01:45:12</span>
-                                        <button class="btn btn-xs" onclick="resetBedsoreTimer('A1')">ยืนยันพลิกตัว</button>
-                                    </div>
-                                </div>
-                                <div class="bed-status-item">
-                                    <span class="label">สถานะความปลอดภัย:</span>
-                                    <span class="safe-badge green" id="nurse-bed1-safety">ปกติ</span>
-                                </div>
-                            </div>
-                            <div class="bed-footer">
-                                <div class="bed-recent-req" id="nurse-bed1-request">สถานะล่าสุด: นอนพักผ่อน</div>
-                            </div>
-                        </div>
-                        
-                        <!-- BED A2 (Simulated) -->
-                        <div class="bed-card" id="bed-card-a2">
-                            <div class="bed-header">
-                                <span class="bed-id">เตียง A2 (ผู้ป่วยไอจาม)</span>
-                                <span class="bed-badge offline">จำลอง</span>
-                            </div>
-                            <div class="bed-body">
-                                <div class="bed-status-item">
-                                    <span class="label">ท่าทางการนอน:</span>
-                                    <strong>นอนหงาย</strong>
-                                </div>
-                                <div class="bed-status-item">
-                                    <span class="label">เวลาสะสม (ท่าเดิม):</span>
-                                    <div class="timer-warning-box">
-                                        <span class="timer-countdown font-mono text-danger">02:12:45</span>
-                                        <button class="btn btn-xs btn-warning" onclick="resetBedsoreTimer('A2')">ยืนยันพลิกตัว</button>
-                                    </div>
-                                </div>
-                                <div class="bed-status-item">
-                                    <span class="label">สถานะความปลอดภัย:</span>
-                                    <span class="safe-badge red animate-flash">นอนทับแผลเกิน 2 ชม.</span>
-                                </div>
-                            </div>
-                            <div class="bed-footer">
-                                <div class="bed-recent-req">สถานะล่าสุด: ตะแคงขวาล่าสุด 2 ชม. ก่อน</div>
-                            </div>
-                        </div>
+          </div>
+          <div class="nihss-scale">
+            <span>ไม่มีอาการ (0)</span>
+            <span>รุนแรงมาก (42)</span>
+          </div>
+        </div>
 
-                        <!-- BED A3 (Simulated) -->
-                        <div class="bed-card" id="bed-card-a3">
-                            <div class="bed-header">
-                                <span class="bed-id">เตียง A3 (ฟื้นฟูกายภาพ)</span>
-                                <span class="bed-badge offline">จำลอง</span>
-                            </div>
-                            <div class="bed-body">
-                                <div class="bed-status-item">
-                                    <span class="label">ท่าทางการนอน:</span>
-                                    <strong>นั่งพิงหัวเตียง</strong>
-                                </div>
-                                <div class="bed-status-item">
-                                    <span class="label">เวลาสะสม (ท่าเดิม):</span>
-                                    <div class="timer-warning-box">
-                                        <span class="timer-countdown font-mono">00:32:15</span>
-                                        <button class="btn btn-xs" onclick="resetBedsoreTimer('A3')">ยืนยันพลิกตัว</button>
-                                    </div>
-                                </div>
-                                <div class="bed-status-item">
-                                    <span class="label">สถานะความปลอดภัย:</span>
-                                    <span class="safe-badge green">ปกติ</span>
-                                </div>
-                            </div>
-                            <div class="bed-footer">
-                                <div class="bed-recent-req">สถานะล่าสุด: ขอยาแก้ปวดเมื่อ 30 นาทีที่แล้ว</div>
-                            </div>
-                        </div>
+        <div class="form-group full-width">
+          <label>โรคร่วม (เลือกได้หลายข้อ)</label>
+          <div class="checkbox-group">
+            <label class="checkbox-card">
+              <input type="checkbox" id="cond-diabetes" value="diabetes" />
+              <span class="check-icon">🩸</span>
+              <span>เบาหวาน</span>
+            </label>
+            <label class="checkbox-card">
+              <input type="checkbox" id="cond-hypertension" value="hypertension" />
+              <span class="check-icon">❤️</span>
+              <span>ความดันโลหิตสูง</span>
+            </label>
+            <label class="checkbox-card">
+              <input type="checkbox" id="cond-heart" value="heart" />
+              <span class="check-icon">💓</span>
+              <span>โรคหัวใจ</span>
+            </label>
+            <label class="checkbox-card">
+              <input type="checkbox" id="cond-cholesterol" value="cholesterol" />
+              <span class="check-icon">🧪</span>
+              <span>คอเลสเตอรอลสูง</span>
+            </label>
+            <label class="checkbox-card">
+              <input type="checkbox" id="cond-smoking" value="smoking" />
+              <span class="check-icon">🚬</span>
+              <span>สูบบุหรี่</span>
+            </label>
+            <label class="checkbox-card">
+              <input type="checkbox" id="cond-none" value="none" />
+              <span class="check-icon">✅</span>
+              <span>ไม่มีโรคร่วม</span>
+            </label>
+          </div>
+        </div>
+      </div>
 
-                        <!-- BED A4 (Simulated) -->
-                        <div class="bed-card" id="bed-card-a4">
-                            <div class="bed-header">
-                                <span class="bed-id">เตียง A4 (ผู้ป่วยวิกฤต)</span>
-                                <span class="bed-badge offline">จำลอง</span>
-                            </div>
-                            <div class="bed-body">
-                                <div class="bed-status-item">
-                                    <span class="label">ท่าทางการนอน:</span>
-                                    <strong>นอนตะแคงซ้าย</strong>
-                                </div>
-                                <div class="bed-status-item">
-                                    <span class="label">เวลาสะสม (ท่าเดิม):</span>
-                                    <div class="timer-warning-box">
-                                        <span class="timer-countdown font-mono">01:05:00</span>
-                                        <button class="btn btn-xs" onclick="resetBedsoreTimer('A4')">ยืนยันพลิกตัว</button>
-                                    </div>
-                                </div>
-                                <div class="bed-status-item">
-                                    <span class="label">สถานะความปลอดภัย:</span>
-                                    <span class="safe-badge green">ปกติ</span>
-                                </div>
-                            </div>
-                            <div class="bed-footer">
-                                <div class="bed-recent-req">สถานะล่าสุด: หลับพักผ่อน</div>
-                            </div>
-                        </div>
+      <div class="step-actions">
+        <button class="btn-primary" onclick="validateAndNextStep(1)">
+          <span>ถัดไป — บันทึกการเคลื่อนไหว</span>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+            <path d="M5 12h14M12 5l7 7-7 7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </button>
+      </div>
+    </div>
 
-                    </div>
-                </div>
-                
-                <!-- Central Log & System Alerts -->
-                <div class="panel log-panel">
-                    <div class="panel-header">
-                        <h2><i class="fa-solid fa-clock-rotate-left"></i> ประวัติแจ้งเตือนจากห้องผู้ป่วย (Event Alert Log - Edge Out)</h2>
-                        <button class="btn btn-xs btn-outline" onclick="clearEventLogs()">ล้างประวัติ</button>
-                    </div>
-                    
-                    <div class="log-list" id="nurse-event-logs">
-                        <div class="log-entry system">
-                            <span class="time">[15:15:00]</span>
-                            <span class="text">ระบบเริ่มเซิร์ฟเวอร์จำลอง IoT LAN Node สำเร็จ</span>
-                        </div>
-                        <div class="log-entry danger animate-flash">
-                            <span class="time">[15:15:05]</span>
-                            <span class="text">เตียง A2: นอนท่าเดิมเกิน 2 ชั่วโมง! กรุณาพลิกตัว</span>
-                        </div>
-                        <div class="log-entry info">
-                            <span class="time">[15:15:12]</span>
-                            <span class="text">เตียง A3: ขอยาแก้ปวด (ส่งสัญญาณออกตัวกระบอกบรรจุยา)</span>
-                        </div>
-                    </div>
-                </div>
-                
+    <!-- STEP 2: Movement Assessment -->
+    <div id="step-2" class="step-content">
+      <div class="step-header">
+        <div class="step-badge">ขั้นตอนที่ 2</div>
+        <h2 class="step-title">ประเมินการเคลื่อนไหว</h2>
+        <p class="step-desc">ทดสอบความสามารถในการเคลื่อนไหว 4 ด้านผ่านกล้องสมาร์ตโฟน</p>
+      </div>
+
+      <div class="camera-wrapper">
+        <div class="camera-frame" id="camera-frame">
+          <div class="camera-overlay">
+            <div class="camera-corners">
+              <span class="corner tl"></span>
+              <span class="corner tr"></span>
+              <span class="corner bl"></span>
+              <span class="corner br"></span>
             </div>
-        </section>
-        
-        <!-- 3. SYSTEM CONFIG/SETTINGS TAB -->
-        <section id="system-settings" class="tab-content">
-            <div class="settings-grid">
-                
-                <!-- AI & Tracking Settings -->
-                <div class="panel">
-                    <div class="panel-header">
-                        <h2><i class="fa-solid fa-sliders"></i> ตั้งค่าการประมวลผลโมเดล (AI Calibration Settings)</h2>
-                    </div>
-                    <div class="settings-form">
-                        <div class="form-group">
-                            <label for="set-dwell-time">เวลาในการจ้องค้างเพื่อคลิก (Dwell Clicking Delay - วินาที)</label>
-                            <input type="number" id="set-dwell-time" min="0.5" max="5.0" step="0.1" value="1.5">
-                            <small>ปรับเพื่อให้เหมาะสมกับการตอบสนองและทิศทางการหันศีรษะของคนไข้</small>
-                        </div>
-                        
-                        <div class="form-group">
-                            <label for="set-head-sensitivity">ความไวของเคอร์เซอร์หันศีรษะ (Head Pose Tracker Sensitivity)</label>
-                            <input type="range" id="set-head-sensitivity" min="5" max="30" value="15">
-                            <small>ค่าสูงขึ้น เคอร์เซอร์จะขยับเร็วและไกลขึ้นเมื่อเอียงศีรษะเล็กน้อย</small>
-                        </div>
-
-                        <div class="form-group">
-                            <label for="set-audio-sens">ระดับความดังดักจับเสียงไอ (Audio Sensitivity Threshold - dB)</label>
-                            <input type="range" id="set-audio-sens" min="-50" max="-10" value="-30">
-                            <small>หากสภาพแวดล้อมมีเสียงดังรบกวนมาก ควรตั้งค่าให้ตัวเลขสูงขึ้น (ติดลบน้อยลง)</small>
-                        </div>
-                        
-                        <div class="form-group">
-                            <label for="set-pose-check">ความถี่ยืนยันท่าทางตกเตียงของ AI (Pose Validation Interval - วินาที)</label>
-                            <input type="number" id="set-pose-check" min="1" max="10" value="2">
-                            <small>หน่วงเวลาให้แน่ใจก่อนทริกเกอร์เตือนตกเตียง เพื่อเลี่ยง false alarm</small>
-                        </div>
-                    </div>
-                </div>
-                
-                <!-- Smart Home & Webhook API Settings -->
-                <div class="panel">
-                    <div class="panel-header">
-                        <h2><i class="fa-solid fa-network-wired"></i> การเชื่อมต่อ IoT & Webhook (Smart Home Integration)</h2>
-                    </div>
-                    <div class="settings-form">
-                        <div class="form-group">
-                            <label for="url-light-on">HTTP API เปิดไฟห้อง (Light ON URL Endpoint)</label>
-                            <input type="url" id="url-light-on" placeholder="http://192.168.1.150/api/switch/light/on" value="http://192.168.1.100/smart/light/on">
-                        </div>
-                        
-                        <div class="form-group">
-                            <label for="url-light-off">HTTP API ปิดไฟห้อง (Light OFF URL Endpoint)</label>
-                            <input type="url" id="url-light-off" placeholder="http://192.168.1.150/api/switch/light/off" value="http://192.168.1.100/smart/light/off">
-                        </div>
-                        
-                        <div class="form-group">
-                            <label for="url-fan-on">HTTP API เปิดพัดลม (Fan ON URL Endpoint)</label>
-                            <input type="url" id="url-fan-on" placeholder="http://192.168.1.150/api/switch/fan/on" value="http://192.168.1.100/smart/fan/on">
-                        </div>
-
-                        <div class="form-group">
-                            <label for="url-fan-off">HTTP API ปิดพัดลม (Fan OFF URL Endpoint)</label>
-                            <input type="url" id="url-fan-off" placeholder="http://192.168.1.150/api/switch/fan/off" value="http://192.168.1.100/smart/fan/off">
-                        </div>
-                        
-                        <div class="form-group">
-                            <label for="url-nurse-alert">Webhook ไปยังระบบโรงพยาบาลส่วนกลาง (Central API Alert Endpoint)</label>
-                            <input type="url" id="url-nurse-alert" placeholder="http://hospital-lan/api/beds/alert" value="http://hospital-lan/api/beds/alert">
-                            <small>ใช้สำหรับยิง HTTP POST แจ้งเตือนเมื่อผู้ป่วยตกเตียง ไอสำลัก หรือกดขอความช่วยเหลือ</small>
-                        </div>
-                        
-                        <button class="btn btn-primary btn-block" onclick="saveSettings()">บันทึกการตั้งค่าทั้งหมด</button>
-                    </div>
-                </div>
-
+            <div class="camera-placeholder" id="camera-placeholder">
+              <div class="cam-icon">📷</div>
+              <p>กด "เริ่มการประเมิน" เพื่อเริ่มต้น</p>
             </div>
-        </section>
+            <div class="pose-display hidden" id="pose-display">
+              <div class="pose-animation" id="pose-animation"></div>
+              <div class="pose-instruction" id="pose-instruction"></div>
+              <div class="scan-line"></div>
+            </div>
+          </div>
+        </div>
+      </div>
 
-    </main>
+      <div class="movement-tests">
+        <div class="movement-card" id="mv-arm">
+          <div class="mv-icon">💪</div>
+          <div class="mv-info">
+            <h4>การยกแขน</h4>
+            <p>ยกแขนข้างที่อ่อนแรงขึ้น</p>
+          </div>
+          <div class="mv-status pending" id="mv-arm-status">รอดำเนินการ</div>
+          <div class="mv-score hidden" id="mv-arm-score"></div>
+        </div>
+        <div class="movement-card" id="mv-hand">
+          <div class="mv-icon">🤚</div>
+          <div class="mv-info">
+            <h4>การทำมือ</h4>
+            <p>กำและคลายมือ 5 ครั้ง</p>
+          </div>
+          <div class="mv-status pending" id="mv-hand-status">รอดำเนินการ</div>
+          <div class="mv-score hidden" id="mv-hand-score"></div>
+        </div>
+        <div class="movement-card" id="mv-walk">
+          <div class="mv-icon">🚶</div>
+          <div class="mv-info">
+            <h4>การเดิน</h4>
+            <p>เดินไป-กลับ 3 เมตร</p>
+          </div>
+          <div class="mv-status pending" id="mv-walk-status">รอดำเนินการ</div>
+          <div class="mv-score hidden" id="mv-walk-score"></div>
+        </div>
+        <div class="movement-card" id="mv-smile">
+          <div class="mv-icon">😊</div>
+          <div class="mv-info">
+            <h4>การยิ้ม</h4>
+            <p>ยิ้มให้กว้างที่สุดเท่าที่ทำได้</p>
+          </div>
+          <div class="mv-status pending" id="mv-smile-status">รอดำเนินการ</div>
+          <div class="mv-score hidden" id="mv-smile-score"></div>
+        </div>
+      </div>
 
-    <!-- Audio tags for alerts -->
-    <audio id="siren-sound" src="https://assets.mixkit.co/active_storage/sfx/993/993-84.wav" preload="auto" loop></audio>
-    <audio id="click-sound" src="https://assets.mixkit.co/active_storage/sfx/2568/2568-84.wav" preload="auto"></audio>
-    <audio id="warning-sound" src="https://assets.mixkit.co/active_storage/sfx/2190/2190-84.wav" preload="auto"></audio>
+      <div class="step-actions">
+        <button class="btn-primary" id="btn-assess" onclick="startAssessment()">
+          <span id="assess-btn-text">🎥 เริ่มการประเมิน</span>
+        </button>
+      </div>
+    </div>
 
-    <!-- App Script -->
-    <script src="app.js"></script>
+    <!-- STEP 3: AI Analysis -->
+    <div id="step-3" class="step-content">
+      <div class="step-header">
+        <div class="step-badge">ขั้นตอนที่ 3</div>
+        <h2 class="step-title">AI กำลังวิเคราะห์ข้อมูล</h2>
+        <p class="step-desc">ระบบกำลังสร้าง Digital Twin ของคุณโดยใช้ข้อมูลทั้งหมดที่รวบรวมได้</p>
+      </div>
+
+      <div class="ai-analysis-container">
+        <div class="brain-animation">
+          <div class="brain-core">
+            <div class="brain-ring ring-1"></div>
+            <div class="brain-ring ring-2"></div>
+            <div class="brain-ring ring-3"></div>
+            <div class="brain-center">
+              <span class="brain-emoji">🧠</span>
+            </div>
+          </div>
+          <div class="neural-dots" id="neural-dots"></div>
+        </div>
+
+        <div class="analysis-steps-list" id="analysis-steps-list">
+          <div class="analysis-step" id="as-1">
+            <div class="as-spinner"></div>
+            <div class="as-text">
+              <span class="as-title">กำลังประมวลผลข้อมูลสุขภาพ...</span>
+              <span class="as-detail">วิเคราะห์ NIHSS Score, ประวัติโรค และพารามิเตอร์ทางคลินิก</span>
+            </div>
+          </div>
+          <div class="analysis-step waiting" id="as-2">
+            <div class="as-spinner"></div>
+            <div class="as-text">
+              <span class="as-title">กำลังวิเคราะห์รูปแบบการเคลื่อนไหว...</span>
+              <span class="as-detail">ประเมิน Motor Function Score จากการทดสอบ 4 ด้าน</span>
+            </div>
+          </div>
+          <div class="analysis-step waiting" id="as-3">
+            <div class="as-spinner"></div>
+            <div class="as-text">
+              <span class="as-title">สร้าง Predictive Model...</span>
+              <span class="as-detail">ฝึกโมเดล Neural Network บน Dataset ผู้ป่วย 50,000+ ราย</span>
+            </div>
+          </div>
+          <div class="analysis-step waiting" id="as-4">
+            <div class="as-spinner"></div>
+            <div class="as-text">
+              <span class="as-title">สร้าง Digital Twin...</span>
+              <span class="as-detail">สร้างจำลองดิจิทัลเฉพาะบุคคลของคุณ</span>
+            </div>
+          </div>
+          <div class="analysis-step waiting" id="as-5">
+            <div class="as-spinner"></div>
+            <div class="as-text">
+              <span class="as-title">คำนวณการทำนายการฟื้นตัว...</span>
+              <span class="as-detail">จำลองสถานการณ์ใน 1, 3 และ 6 เดือนข้างหน้า</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="analysis-progress">
+          <div class="analysis-progress-bar" id="analysis-progress-bar"></div>
+          <span id="analysis-percent">0%</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- STEP 4: Results Dashboard -->
+    <div id="step-4" class="step-content">
+      <div class="step-header">
+        <div class="step-badge success-badge">Digital Twin พร้อมแล้ว ✓</div>
+        <h2 class="step-title">ผลการวิเคราะห์และการทำนายการฟื้นตัว</h2>
+        <p class="step-desc" id="patient-summary-text">Digital Twin ของคุณผู้ป่วย — ประมวลผลสำเร็จ</p>
+      </div>
+
+      <!-- Overall Score -->
+      <div class="overall-score-card">
+        <div class="score-left">
+          <div class="twin-avatar">
+            <div class="avatar-body">
+              <div class="avatar-head"></div>
+              <div class="avatar-torso"></div>
+              <div class="avatar-arms">
+                <div class="avatar-arm left" id="avatar-arm-l"></div>
+                <div class="avatar-arm right" id="avatar-arm-r"></div>
+              </div>
+              <div class="avatar-legs">
+                <div class="avatar-leg left"></div>
+                <div class="avatar-leg right"></div>
+              </div>
+              <div class="avatar-glow"></div>
+              <div class="avatar-rings">
+                <div class="av-ring av-ring-1"></div>
+                <div class="av-ring av-ring-2"></div>
+              </div>
+            </div>
+            <div class="avatar-label">Digital Twin</div>
+          </div>
+        </div>
+        <div class="score-right">
+          <div class="current-score-display">
+            <span class="score-label">คะแนนการฟื้นตัวปัจจุบัน</span>
+            <div class="big-score">
+              <span class="big-score-number" id="current-score">--</span>
+              <span class="big-score-unit">/ 100</span>
+            </div>
+            <div class="score-bar-container">
+              <div class="score-bar-fill" id="score-bar-fill"></div>
+            </div>
+          </div>
+          <div class="score-metrics">
+            <div class="metric-item">
+              <span class="metric-icon">💪</span>
+              <span class="metric-name">Motor Function</span>
+              <span class="metric-val" id="metric-motor">--</span>
+            </div>
+            <div class="metric-item">
+              <span class="metric-icon">🗣️</span>
+              <span class="metric-name">Speech & Language</span>
+              <span class="metric-val" id="metric-speech">--</span>
+            </div>
+            <div class="metric-item">
+              <span class="metric-icon">🧩</span>
+              <span class="metric-name">Cognitive Function</span>
+              <span class="metric-val" id="metric-cognitive">--</span>
+            </div>
+            <div class="metric-item">
+              <span class="metric-icon">⚖️</span>
+              <span class="metric-name">Balance & Coordination</span>
+              <span class="metric-val" id="metric-balance">--</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Recovery Timeline -->
+      <div class="timeline-section">
+        <h3 class="section-heading">🔮 การทำนายการฟื้นตัว</h3>
+        <div class="timeline-tabs">
+          <button class="timeline-tab active" id="tab-1m" onclick="showTimeline('1m')">1 เดือน</button>
+          <button class="timeline-tab" id="tab-3m" onclick="showTimeline('3m')">3 เดือน</button>
+          <button class="timeline-tab" id="tab-6m" onclick="showTimeline('6m')">6 เดือน</button>
+        </div>
+
+        <div class="timeline-content" id="timeline-content">
+          <!-- Populated by JS -->
+        </div>
+      </div>
+
+      <!-- Recovery Chart -->
+      <div class="chart-section">
+        <h3 class="section-heading">📈 กราฟการฟื้นตัวตลอดระยะเวลา</h3>
+        <div class="chart-wrapper">
+          <canvas id="recovery-chart" width="800" height="300"></canvas>
+        </div>
+      </div>
+
+      <!-- Treatment Plan -->
+      <div class="treatment-section premium-section" id="treatment-section-wrap">
+        <h3 class="section-heading">🎯 แผนการรักษาเฉพาะบุคคล</h3>
+        <div class="treatment-timeline" id="treatment-timeline"></div>
+        <!-- Premium Gate -->
+        <div class="premium-gate" id="gate-treatment">
+          <div class="gate-content">
+            <div class="gate-icon">🔒</div>
+            <h4>ฟีเจอร์ Pro</h4>
+            <p>แผนการรักษาเฉพาะบุคคล 4 ระยะ พร้อมคำแนะนำรายสัปดาห์<br/>สำหรับผู้ใช้ Pro และ Enterprise เท่านั้น</p>
+            <button class="gate-upgrade-btn" onclick="openPaymentModal('pro')">⚡ อัปเกรดเป็น Pro — ฿790/เดือน</button>
+            <span class="gate-trial">ทดลองฟรี 7 วัน ไม่ต้องใส่บัตรเครดิต</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Risk Factors -->
+      <div class="risk-section premium-section" id="risk-section-wrap">
+        <h3 class="section-heading">⚠️ ปัจจัยเสี่ยงและคำแนะนำ</h3>
+        <div class="risk-grid" id="risk-grid"></div>
+        <!-- Premium Gate -->
+        <div class="premium-gate" id="gate-risk">
+          <div class="gate-content">
+            <div class="gate-icon">🔒</div>
+            <h4>ฟีเจอร์ Pro</h4>
+            <p>วิเคราะห์ปัจจัยเสี่ยงเชิงลึกและคำแนะนำส่วนบุคคล<br/>สำหรับผู้ใช้ Pro และ Enterprise เท่านั้น</p>
+            <button class="gate-upgrade-btn" onclick="openPaymentModal('pro')">⚡ อัปเกรดเป็น Pro</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Doctor Consultation (Enterprise only) -->
+      <div class="consult-section premium-section" id="consult-section">
+        <h3 class="section-heading">👨‍⚕️ ปรึกษาแพทย์ออนไลน์</h3>
+        <div class="consult-content">
+          <div class="consult-avatar">
+            <div class="doctor-avatar">👨‍⚕️</div>
+            <div class="doctor-info">
+              <span class="doctor-name">พญ. สุภาพร วงศ์สวัสดิ์</span>
+              <span class="doctor-spec">อายุรแพทย์ระบบประสาท • 15 ปีประสบการณ์</span>
+              <span class="doctor-avail">🟢 ว่างพรุ่งนี้ 10:00 น.</span>
+            </div>
+          </div>
+        </div>
+        <!-- Enterprise Gate -->
+        <div class="premium-gate enterprise-gate" id="gate-consult">
+          <div class="gate-content">
+            <div class="gate-icon">🏥</div>
+            <h4>ฟีเจอร์ Enterprise</h4>
+            <p>ปรึกษาแพทย์ผู้เชี่ยวชาญด้านระบบประสาทโดยตรง<br/>4 ครั้ง/เดือน ผ่าน Video Call</p>
+            <button class="gate-upgrade-btn ent-btn" onclick="openPaymentModal('enterprise')">🏥 อัปเกรดเป็น Enterprise — ฿2,490/เดือน</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Actions -->
+      <div class="step-actions result-actions">
+        <button class="btn-primary" onclick="printReport()">
+          <span>📄 ดาวน์โหลดรายงาน</span>
+        </button>
+        <button class="btn-secondary" onclick="resetApp()">
+          <span>🔄 เริ่มการประเมินใหม่</span>
+        </button>
+      </div>
+    </div>
+  </section>
+
+  <!-- Toast -->
+  <div id="toast" class="toast hidden"></div>
+
+  <!-- ===== BENEFITS MODAL ===== -->
+  <div id="benefits-modal" class="modal-overlay hidden" onclick="closeBenefitsModalOutside(event)">
+    <div class="modal-box benefits-box">
+      <button class="modal-close" onclick="closeBenefitsModal()">✕</button>
+      <div class="benefits-header">
+        <h2 class="benefits-title">สิทธิประโยชน์ของคุณ</h2>
+      </div>
+      <div class="benefits-list">
+        <div class="benefit-item-card">
+          <div class="benefit-item-icon-circle">
+            <span class="emoji-benefit">🧠</span>
+          </div>
+          <div class="benefit-item-text">
+            <h4>AI วิเคราะห์แม่นยำ</h4>
+            <p>ใช้ AI ขั้นสูงในการวิเคราะห์ข้อมูลและทำนายการฟื้นตัวของผู้ป่วย</p>
+          </div>
+        </div>
+        <div class="benefit-item-card">
+          <div class="benefit-item-icon-circle">
+            <span class="emoji-benefit">🧬</span>
+          </div>
+          <div class="benefit-item-text">
+            <h4>Digital Twin</h4>
+            <p>สร้างแบบจำลองดิจิทัลของคุณ เพื่อจำลองและวางแผนการรักษา</p>
+          </div>
+        </div>
+        <div class="benefit-item-card">
+          <div class="benefit-item-icon-circle">
+            <span class="emoji-benefit">📊</span>
+          </div>
+          <div class="benefit-item-text">
+            <h4>รายงานเชิงลึก</h4>
+            <p>ดูกราฟแนวโน้มและรายงานผลการฟื้นตัวอย่างละเอียด</p>
+          </div>
+        </div>
+        <div class="benefit-item-card">
+          <div class="benefit-item-icon-circle">
+            <span class="emoji-benefit">🛡️</span>
+          </div>
+          <div class="benefit-item-text">
+            <h4>ปลอดภัย มั่นใจได้</h4>
+            <p>ปกป้องข้อมูลของคุณด้วยมาตรฐานการเข้ารหัสระดับสากล</p>
+          </div>
+        </div>
+      </div>
+      <div class="benefits-body-graphic">
+        <div class="hologram-body">
+          <svg viewBox="0 0 100 200" width="80" height="160" fill="none" stroke="var(--accent)" stroke-width="1.5">
+            <circle cx="50" cy="25" r="12" stroke-dasharray="2 2" />
+            <line x1="50" y1="37" x2="50" y2="100" />
+            <line x1="50" y1="50" x2="25" y2="90" />
+            <line x1="50" y1="50" x2="75" y2="90" />
+            <line x1="50" y1="100" x2="35" y2="160" />
+            <line x1="50" y1="100" x2="65" y2="160" />
+            <line x1="20" y1="80" x2="80" y2="80" stroke="var(--accent-2)" stroke-width="1" class="scan-line-hologram" />
+          </svg>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== PAYMENT MODAL ===== -->
+  <div id="payment-modal" class="modal-overlay hidden" onclick="closeModalOutside(event)">
+    <div class="modal-box checkout-box" id="modal-box">
+      <!-- Step B: Checkout Screen -->
+      <div id="modal-payment" class="modal-step active">
+        <button class="modal-close" onclick="closePaymentModal()">✕</button>
+        <div class="checkout-header">
+          <h2 class="modal-title">ชำระเงิน</h2>
+        </div>
+
+        <div class="order-summary-bar">
+          <div class="order-summary-label">รายการสั่งซื้อ</div>
+          <div class="order-summary-item" id="order-plan-name">แพ็กเกจถาวร (Lifetime)</div>
+          <div class="order-summary-price" id="order-plan-price">฿3,999</div>
+        </div>
+
+        <div class="payment-channels-title">ช่องทางการชำระเงิน</div>
+        <div class="payment-channels-list">
+          <!-- Card Option -->
+          <label class="pay-channel-card selected" id="pc-card-label" onclick="selectPayMethod('card')">
+            <input type="radio" name="pay-method" id="pc-card" value="card" checked />
+            <span class="channel-radio-indicator"></span>
+            <div class="channel-info">
+              <span class="channel-name">บัตรเครดิต / เดบิต</span>
+              <div class="channel-logos">
+                <span class="logo-visa">VISA</span>
+                <span class="logo-mastercard">MC</span>
+              </div>
+            </div>
+          </label>
+
+          <!-- PromptPay Option -->
+          <label class="pay-channel-card" id="pc-promptpay-label" onclick="selectPayMethod('promptpay')">
+            <input type="radio" name="pay-method" id="pc-promptpay" value="promptpay" />
+            <span class="channel-radio-indicator"></span>
+            <div class="channel-info">
+              <span class="channel-name">PromptPay</span>
+              <div class="channel-logos">
+                <span class="logo-promptpay">PromptPay</span>
+              </div>
+            </div>
+          </label>
+
+          <!-- TrueMoney Option -->
+          <label class="pay-channel-card" id="pc-truemoney-label" onclick="selectPayMethod('truemoney')">
+            <input type="radio" name="pay-method" id="pc-truemoney" value="truemoney" />
+            <span class="channel-radio-indicator"></span>
+            <div class="channel-info">
+              <span class="channel-name">TrueMoney Wallet</span>
+              <div class="channel-logos">
+                <span class="logo-truemoney">TrueMoney</span>
+              </div>
+            </div>
+          </label>
+        </div>
+
+        <!-- Form container (subviews depending on selection) -->
+        <div class="payment-form-container">
+          <!-- Card Form View -->
+          <div id="card-form-wrapper" class="payment-form-view">
+            <!-- Simulated card live preview -->
+            <div class="card-preview" id="card-preview">
+              <div class="card-chip">▬▬</div>
+              <div class="card-number-display" id="card-num-disp">•••• •••• •••• ••••</div>
+              <div class="card-bottom">
+                <div>
+                  <div class="card-field-label">ชื่อผู้ถือบัตร</div>
+                  <div class="card-name-disp" id="card-name-disp">ชื่อผู้ถือบัตร</div>
+                </div>
+                <div>
+                  <div class="card-field-label">หมดอายุ</div>
+                  <div class="card-exp-disp" id="card-exp-disp">MM/YY</div>
+                </div>
+                <div class="card-logo">VISA</div>
+              </div>
+            </div>
+
+            <div class="pay-form">
+              <div class="pay-field">
+                <label>หมายเลขบัตร</label>
+                <input type="text" id="card-number" class="pay-input" placeholder="0000 0000 0000 0000"
+                  maxlength="19" oninput="formatCardNumber(this)" />
+              </div>
+              <div class="pay-row">
+                <div class="pay-field col-6">
+                  <label>ชื่อผู้ถือบัตร</label>
+                  <input type="text" id="card-name" class="pay-input" placeholder="ชื่อ นามสกุล"
+                    oninput="document.getElementById('card-name-disp').textContent = this.value.toUpperCase() || 'ชื่อผู้ถือบัตร'" />
+                </div>
+                <div class="pay-field col-3">
+                  <label>หมดอายุ</label>
+                  <input type="text" id="card-exp" class="pay-input" placeholder="MM/YY"
+                    maxlength="5" oninput="formatExpiry(this)" />
+                </div>
+                <div class="pay-field col-3">
+                  <label>CVV</label>
+                  <input type="password" id="card-cvv" class="pay-input" placeholder="•••" maxlength="4" />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- PromptPay View -->
+          <div id="promptpay-wrapper" class="payment-form-view hidden">
+            <div class="qr-container">
+              <div class="qr-mock-box">
+                <div class="qr-logo-bar">
+                  <span class="qr-logo-txt">Thai QR Payment</span>
+                </div>
+                <div class="qr-code-graphic">
+                  <div class="qr-grid-pattern"></div>
+                  <div class="qr-center-logo">PP</div>
+                </div>
+                <div class="qr-amount-display" id="promptpay-qr-amount">฿3,999</div>
+              </div>
+              <p class="qr-instruction">สแกน QR Code เพื่อชำระเงินผ่านแอปธนาคารของคุณ</p>
+            </div>
+          </div>
+
+          <!-- TrueMoney View -->
+          <div id="truemoney-wrapper" class="payment-form-view hidden">
+            <div class="pay-form">
+              <div class="pay-field">
+                <label>เบอร์โทรศัพท์ TrueMoney Wallet</label>
+                <input type="tel" id="truemoney-phone" class="pay-input" placeholder="0XX-XXX-XXXX" maxlength="13" oninput="formatPhoneNumber(this)" />
+              </div>
+            </div>
+            <p class="truemoney-instruction">ระบบจะส่งรหัส OTP ไปยังเบอร์โทรศัพท์เพื่อยืนยันการทำรายการ</p>
+          </div>
+        </div>
+
+        <div class="checkout-total-bar">
+          <div class="total-label">ยอดรวมทั้งหมด</div>
+          <div class="total-amount" id="checkout-total-amount">฿3,999</div>
+        </div>
+
+        <button class="btn-primary modal-cta checkout-confirm-btn" id="pay-confirm-btn" onclick="processPayment()">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="btn-lock-icon" style="margin-right: 8px; vertical-align: middle;">
+            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+            <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+          </svg>
+          <span id="pay-confirm-text">ชำระเงิน ฿3,999</span>
+        </button>
+        <p class="modal-fine-print" id="pay-under-btn-fine-print">ชำระครั้งเดียว ใช้งานได้ตลอดชีพ</p>
+      </div>
+
+      <!-- Step C: Processing -->
+      <div id="modal-processing" class="modal-step">
+        <div class="processing-anim">
+          <div class="proc-ring"></div>
+          <div class="proc-icon">🔒</div>
+        </div>
+        <h3 class="proc-title">กำลังดำเนินการชำระเงิน...</h3>
+        <p class="proc-subtitle">กรุณารอสักครู่ อย่าปิดหน้าต่างนี้ ระบบกำลังเชื่อมต่อกับเกตเวย์การชำระเงินที่ปลอดภัย</p>
+        <div class="proc-steps" id="proc-steps">
+          <div class="proc-step-item active" id="ps-1">1. ตรวจสอบข้อมูลสิทธิ์การทำรายการ...</div>
+          <div class="proc-step-item" id="ps-2">2. กำลังหักยอดเงินอย่างปลอดภัย...</div>
+          <div class="proc-step-item" id="ps-3">3. เปิดใช้งานสิทธิ์ Premium...</div>
+        </div>
+      </div>
+
+      <!-- Step D: Success -->
+      <div id="modal-success" class="modal-step">
+        <div class="success-anim">
+          <div class="success-ring"></div>
+          <div class="success-check">✓</div>
+        </div>
+        <h3 class="success-title">ชำระเงินสำเร็จ! 🎉</h3>
+        <p class="success-subtitle" id="success-subtitle">บัญชีของคุณได้รับการอัปเกรดเป็น Premium เรียบร้อยแล้ว</p>
+        <div class="success-features" id="success-features">
+          <div class="sf-item">✓ ปลดล็อกแผนการรักษาและฟื้นฟูเฉพาะบุคคล 4 ระยะ</div>
+          <div class="sf-item">✓ ปลดล็อกการวิเคราะห์ปัจจัยเสี่ยงและคำแนะนำรายวัน</div>
+          <div class="sf-item">✓ ปลดล็อกการปรึกษาแพทย์เฉพาะทางระบบประสาทออนไลน์</div>
+          <div class="sf-item">✓ จำลองโมเดล Digital Twin และทำนายผลไม่จำกัดครั้ง</div>
+        </div>
+        <button class="btn-primary modal-cta success-cta-btn" onclick="activatePremium()">
+          🚀 เริ่มใช้งาน Premium ทันที
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script src="neural-bg.js"></script>
+  <script src="app.js"></script>
+  <script src="upgrade.js"></script>
 </body>
 </html>

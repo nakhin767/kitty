@@ -1,1233 +1,711 @@
-/**
- * SabaiCare - Assistive Caregiver & Patient Platform Logic
- * Contains: 
- * 1. Web Audio API cough/choke detector
- * 2. MediaPipe Face Mesh & Head Pose pointer tracking
- * 3. MediaPipe Pose bed escape / fall prediction & position timer
- * 4. LAN Tab Communication via BroadcastChannel
- * 5. Smart Room simulated controls & Webhook execution
- * 6. Fallback simulation engine
- */
+// NeuroTwin — Main Application Logic
+'use strict';
 
-// Tab Management
-function switchTab(tabId) {
-    document.querySelectorAll('.tab-content').forEach(tab => {
-        tab.classList.remove('active');
-    });
-    document.querySelectorAll('.nav-btn').forEach(btn => {
-        btn.classList.remove('active');
-    });
-
-    const activeTab = document.getElementById(tabId);
-    if (activeTab) {
-        activeTab.classList.add('active');
-    }
-
-    // Highlight button
-    if (tabId === 'patient-station') {
-        document.getElementById('tab-patient').classList.add('active');
-    } else if (tabId === 'nurse-monitor') {
-        document.getElementById('tab-nurse').classList.add('active');
-        // Clear alert badge count on opening nurse monitor
-        clearNurseBadge();
-    } else if (tabId === 'system-settings') {
-        document.getElementById('tab-settings').classList.add('active');
-    }
-}
-
-// -------------------------------------------------------------
-// LAN Communication via BroadcastChannel (No Internet Required)
-// -------------------------------------------------------------
-const lanChannel = new BroadcastChannel('sabaicare-lan');
-
-// Broadcast an alert or state change
-function broadcastState(type, data) {
-    lanChannel.postMessage({
-        sender: 'Bed-A1',
-        timestamp: new Date().toISOString(),
-        type: type,
-        data: data
-    });
-}
-
-// Handle incoming messages
-lanChannel.onmessage = function(event) {
-    const msg = event.data;
-    console.log("LAN Msg Received:", msg);
-    handleIncomingLANData(msg);
+// ===================================================
+// STATE
+// ===================================================
+const state = {
+  currentStep: 0,
+  patientData: {},
+  movementScores: { arm: null, hand: null, walk: null, smile: null },
+  predictions: null,
+  assessmentRunning: false,
+  assessmentDone: false,
 };
 
-function handleIncomingLANData(msg) {
-    const timeStr = new Date(msg.timestamp).toLocaleTimeString();
-    
-    // Add to Nurse Logs
-    if (msg.type === 'aac_alert') {
-        addLogEntry('info', `[${timeStr}] ${msg.sender}: ร้องขอ [${msg.data.text}] ${msg.data.icon}`);
-        updateNurseBedRequest(msg.sender, `ล่าสุด: ร้องขอ ${msg.data.text}`);
-        triggerNurseAlertBell();
-    } 
-    else if (msg.type === 'fall_alert') {
-        addLogEntry('danger', `[${timeStr}] ${msg.sender}: 🚨 แจ้งเตือน! ${msg.data.warning}`);
-        updateNurseBedSafety(msg.sender, msg.data.warning, 'red');
-        triggerNurseAlertBell(true);
-        triggerGlobalEmergencyBanner(`${msg.sender} ${msg.data.warning}`);
-    } 
-    else if (msg.type === 'choke_alert') {
-        addLogEntry('danger', `[${timeStr}] ${msg.sender}: 🚨 ฉุกเฉิน! ตรวจพบเสียงสำลักหรือหายใจติดขัดสะสม`);
-        updateNurseBedSafety(msg.sender, 'ตรวจพบการสำลักไอ!', 'red');
-        triggerNurseAlertBell(true);
-        triggerGlobalEmergencyBanner(`${msg.sender}: ตรวจพบการสำลักไอติดต่อกัน!`);
-    } 
-    else if (msg.type === 'pose_change') {
-        updateNurseBedPose(msg.sender, msg.data.pose);
-        if (msg.data.pose.includes('ตะแคง') || msg.data.pose.includes('หงาย') || msg.data.pose.includes('นั่ง')) {
-            addLogEntry('system', `[${timeStr}] ${msg.sender}: เปลี่ยนท่านอนเป็น [${msg.data.pose}]`);
-        }
-    } 
-    else if (msg.type === 'bedsore_warning') {
-        addLogEntry('danger', `[${timeStr}] ${msg.sender}: ⚠️ นอนท่าเดิมนานเกิน 2 ชม. (เสี่ยงแผลกดทับ)`);
-        updateNurseBedSafety(msg.sender, 'เสี่ยงแผลกดทับ', 'red');
-        triggerNurseAlertBell();
-    }
+// ===================================================
+// NAVIGATION
+// ===================================================
+function goToStep(step) {
+  if (step === 1) {
+    document.getElementById('page-landing').classList.remove('active');
+    document.getElementById('page-steps').classList.add('active');
+    window.scrollTo(0, 0);
+  }
+  state.currentStep = step;
+  updateProgressBar(step);
+  document.querySelectorAll('.step-content').forEach(el => el.classList.remove('active'));
+  const el = document.getElementById(`step-${step}`);
+  if (el) el.classList.add('active');
 }
 
-// -------------------------------------------------------------
-// Voice Synthesis (Thai Text-To-Speech)
-// -------------------------------------------------------------
-function speakThai(text) {
-    if ('speechSynthesis' in window) {
-        // Cancel any active speech
-        window.speechSynthesis.cancel();
-        
-        const utterance = new SpeechSynthesisUtterance(text);
-        utterance.lang = 'th-TH';
-        utterance.rate = 0.85; // Slightly slower for clarity
-        utterance.pitch = 1.0;
-        
-        // Find Thai voice if available
-        const voices = window.speechSynthesis.getVoices();
-        const thaiVoice = voices.find(voice => voice.lang.includes('th') || voice.lang.includes('TH'));
-        if (thaiVoice) {
-            utterance.voice = thaiVoice;
-        }
-        
-        window.speechSynthesis.speak(utterance);
-    }
+function goBack() {
+  if (state.currentStep <= 1) {
+    document.getElementById('page-steps').classList.remove('active');
+    document.getElementById('page-landing').classList.add('active');
+    window.scrollTo(0, 0);
+    state.currentStep = 0;
+    return;
+  }
+  goToStep(state.currentStep - 1);
 }
 
-// Pre-load voices
-if ('speechSynthesis' in window) {
-    window.speechSynthesis.onvoiceschanged = () => {};
+function updateProgressBar(step) {
+  const pct = (step / 4) * 100;
+  document.getElementById('progress-bar').style.width = `${pct}%`;
+  document.getElementById('step-indicator').textContent = `ขั้นตอนที่ ${step} / 4`;
+  document.getElementById('back-btn').style.display = step >= 3 ? 'none' : 'flex';
 }
 
-// -------------------------------------------------------------
-// AAC Communication Board Actions
-// -------------------------------------------------------------
-function triggerAAC(actionId, text, icon) {
-    playAudioFeedback('click-sound');
-    
-    // 1. Voice Speech in Thai
-    const card = document.getElementById(`btn-aac-${actionId}`);
-    const speechText = card ? card.getAttribute('data-speech') : text;
-    speakThai(speechText);
-    
-    // 2. Add locally to spelling box
-    const customInput = document.getElementById('custom-message-input');
-    customInput.value = text;
-    
-    // 3. Broadcast to Nurse Station via LAN
-    broadcastState('aac_alert', { action: actionId, text: text, icon: icon });
-    
-    // 4. Update local log just in case
-    console.log(`AAC Triggered: ${text}`);
-
-    // If SOS, trigger flashing siren
-    if (actionId === 'sos') {
-        triggerGlobalEmergencyBanner("เตียง A1: ร้องขอความช่วยเหลือฉุกเฉิน (SOS)!");
-    }
+function resetApp() {
+  state.currentStep = 0;
+  state.patientData = {};
+  state.movementScores = { arm: null, hand: null, walk: null, smile: null };
+  state.predictions = null;
+  state.assessmentRunning = false;
+  state.assessmentDone = false;
+  resetMovementUI();
+  document.getElementById('page-steps').classList.remove('active');
+  document.getElementById('page-landing').classList.add('active');
+  window.scrollTo(0, 0);
 }
 
-function speakCustomMessage() {
-    const customInput = document.getElementById('custom-message-input');
-    if (customInput.value.trim() !== '') {
-        speakThai(customInput.value);
-        broadcastState('aac_alert', { action: 'custom', text: customInput.value, icon: '💬' });
-    }
+// ===================================================
+// LANDING
+// ===================================================
+function showHowItWorks() {
+  const el = document.getElementById('how-it-works');
+  el.classList.toggle('hidden');
+  if (!el.classList.contains('hidden')) {
+    el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
 }
 
-function clearCustomMessage() {
-    document.getElementById('custom-message-input').value = '';
+// ===================================================
+// STEP 1 — VALIDATION
+// ===================================================
+function updateNIHSS(val) {
+  document.getElementById('nihss-value').textContent = val;
+  const labels = {
+    0: 'ไม่มีอาการ (Normal)',
+    5: 'เล็กน้อยมาก',
+    10: 'ระดับปานกลาง',
+    16: 'ปานกลาง-รุนแรง',
+    21: 'รุนแรง',
+    35: 'รุนแรงมาก',
+    42: 'วิกฤต',
+  };
+  const v = parseInt(val);
+  let label = 'ระดับปานกลาง';
+  if (v === 0) label = 'ไม่มีอาการ';
+  else if (v <= 4) label = 'เล็กน้อยมาก';
+  else if (v <= 8) label = 'เล็กน้อย';
+  else if (v <= 15) label = 'ปานกลาง';
+  else if (v <= 20) label = 'ปานกลาง-รุนแรง';
+  else if (v <= 30) label = 'รุนแรง';
+  else label = 'รุนแรงมาก';
+  document.getElementById('nihss-label').textContent = label;
+
+  // update range input gradient
+  const pct = (v / 42) * 100;
+  document.getElementById('nihss-score').style.setProperty('--pct', `${pct}%`);
+}
+// Initialize
+updateNIHSS(10);
+
+function validateAndNextStep(step) {
+  if (step === 1) {
+    const name = document.getElementById('patient-name').value.trim();
+    const age = document.getElementById('patient-age').value;
+    const gender = document.querySelector('input[name="gender"]:checked');
+    const weight = document.getElementById('patient-weight').value;
+    const height = document.getElementById('patient-height').value;
+    const strokeDate = document.getElementById('stroke-date').value;
+    const nihss = document.getElementById('nihss-score').value;
+
+    if (!name) return showToast('⚠️ กรุณากรอกชื่อ-นามสกุล', 'error');
+    if (!age || age < 1 || age > 120) return showToast('⚠️ กรุณากรอกอายุที่ถูกต้อง', 'error');
+    if (!gender) return showToast('⚠️ กรุณาเลือกเพศ', 'error');
+    if (!weight) return showToast('⚠️ กรุณากรอกน้ำหนัก', 'error');
+    if (!height) return showToast('⚠️ กรุณากรอกส่วนสูง', 'error');
+    if (!strokeDate) return showToast('⚠️ กรุณาระบุวันที่เกิด Stroke', 'error');
+
+    const conditions = [...document.querySelectorAll('.checkbox-card input:checked')].map(el => el.value);
+
+    state.patientData = { name, age: parseInt(age), gender: gender.value, weight: parseFloat(weight), height: parseFloat(height), strokeDate, nihss: parseInt(nihss), conditions };
+
+    goToStep(2);
+  }
 }
 
-// -------------------------------------------------------------
-// Smart Room Controls & Webhook API
-// -------------------------------------------------------------
-const smartHomeState = {
-    light: false,
-    fan: false,
-    plug: false
-};
+// ===================================================
+// STEP 2 — MOVEMENT ASSESSMENT
+// ===================================================
+const MOVEMENTS = [
+  { id: 'arm', icon: '💪', emoji: '🙋', instruction: 'ยกแขนข้างที่อ่อนแรงขึ้น ค้างไว้ 5 วินาที' },
+  { id: 'hand', icon: '🤚', emoji: '✊', instruction: 'กำมือแน่น แล้วคลายออก ทำซ้ำ 5 ครั้ง' },
+  { id: 'walk', icon: '🚶', emoji: '🚶‍♂️', instruction: 'เดินไปข้างหน้า 3 ก้าว แล้วหันกลับ' },
+  { id: 'smile', icon: '😊', emoji: '😁', instruction: 'ยิ้มกว้างให้สุดเท่าที่ทำได้ ค้างไว้ 3 วินาที' },
+];
 
-function triggerSmartDevice(device) {
-    playAudioFeedback('click-sound');
-    smartHomeState[device] = !smartHomeState[device];
-    
-    // 1. Update UI buttons
-    const btn = document.getElementById(`btn-aac-${device}`);
-    if (btn) {
-        if (smartHomeState[device]) {
-            btn.classList.add('iot-active');
-            if (device === 'light') btn.querySelector('.card-text').innerText = "ไฟห้อง: เปิดอยู่";
-            if (device === 'fan') btn.querySelector('.card-text').innerText = "พัดลม: เปิดอยู่";
-        } else {
-            btn.classList.remove('iot-active');
-            if (device === 'light') btn.querySelector('.card-text').innerText = "เปิด/ปิด ไฟห้อง";
-            if (device === 'fan') btn.querySelector('.card-text').innerText = "เปิด/ปิด พัดลม";
-        }
-    }
-    
-    // 2. Update Smart Room Simulation Widget
-    const simBulb = document.getElementById('sim-light-bulb');
-    const simFan = document.getElementById('sim-fan');
-    const simPlug = document.getElementById('sim-plug');
-    
-    if (device === 'light') {
-        if (smartHomeState[device]) {
-            simBulb.classList.add('active-light');
-            simBulb.querySelector('span').innerText = "ไฟเพดาน (On)";
-            simPlug.classList.add('active-plug');
-            executeWebhook('light-on');
-        } else {
-            simBulb.classList.remove('active-light');
-            simBulb.querySelector('span').innerText = "ไฟเพดาน (Off)";
-            if (!smartHomeState.fan) simPlug.classList.remove('active-plug');
-            executeWebhook('light-off');
-        }
-    } else if (device === 'fan') {
-        if (smartHomeState[device]) {
-            simFan.classList.add('active-fan');
-            simFan.querySelector('span').innerText = "พัดลมระบาย (On)";
-            simPlug.classList.add('active-plug');
-            executeWebhook('fan-on');
-        } else {
-            simFan.classList.remove('active-fan');
-            simFan.querySelector('span').innerText = "พัดลมระบาย (Off)";
-            if (!smartHomeState.light) simPlug.classList.remove('active-plug');
-            executeWebhook('fan-off');
-        }
-    }
-    
-    // Broadcast status change
-    broadcastState('iot_change', { device: device, state: smartHomeState[device] });
-    speakThai(smartHomeState[device] ? `เปิด${device === 'light' ? 'ไฟ' : 'พัดลม'}` : `ปิด${device === 'light' ? 'ไฟ' : 'พัดลม'}`);
-}
-
-function executeWebhook(actionType) {
-    let url = "";
-    if (actionType === 'light-on') url = document.getElementById('url-light-on').value;
-    else if (actionType === 'light-off') url = document.getElementById('url-light-off').value;
-    else if (actionType === 'fan-on') url = document.getElementById('url-fan-on').value;
-    else if (actionType === 'fan-off') url = document.getElementById('url-fan-off').value;
-    
-    if (!url) return;
-    
-    console.log(`Executing IoT Webhook: ${actionType} -> ${url}`);
-    
-    // Issue non-blocking HTTP fetch (no-cors prevents cross-origin blocks for simple smart switches)
-    fetch(url, { method: 'GET', mode: 'no-cors' })
-        .then(() => console.log(`IoT Webhook trigger sent successfully.`))
-        .catch(err => console.warn(`Webhook failed or CORS blocked:`, err.message));
-}
-
-// -------------------------------------------------------------
-// Audio Threshold Alert & Cough/Choke Detection
-// -------------------------------------------------------------
-let audioContext = null;
-let analyser = null;
-let microphoneStream = null;
-let micCheckInterval = null;
-let isMicActive = false;
-
-// Audio detection configuration
-let audioThresholdDb = -30; // Configured in settings
-let coughCount = 0;
-let coughResetTimer = null;
-
-function toggleMicrophone() {
-    if (isMicActive) {
-        stopMicrophone();
-    } else {
-        startMicrophone();
-    }
-}
-
-function startMicrophone() {
-    if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-        navigator.mediaDevices.getUserMedia({ audio: true, video: false })
-            .then(stream => {
-                audioContext = new (window.AudioContext || window.webkitAudioContext)();
-                analyser = audioContext.createAnalyser();
-                analyser.fftSize = 256;
-                
-                const source = audioContext.createMediaStreamSource(stream);
-                source.connect(analyser);
-                
-                microphoneStream = stream;
-                isMicActive = true;
-                document.getElementById('btn-toggle-mic').innerHTML = '<i class="fa-solid fa-microphone"></i> ปิดไมโครโฟน';
-                document.getElementById('btn-toggle-mic').classList.add('btn-primary');
-                document.getElementById('mic-status-text').innerText = "กำลังรับฟังเสียงสำลักไอ...";
-                
-                monitorAudioThreshold();
-            })
-            .catch(err => {
-                alert("ไม่สามารถเข้าถึงไมโครโฟนได้: " + err.message);
-                console.error(err);
-            });
-    } else {
-        alert("เบราว์เซอร์ไม่รองรับการดึงสัญญาณไมโครโฟน");
-    }
-}
-
-function stopMicrophone() {
-    if (microphoneStream) {
-        microphoneStream.getTracks().forEach(track => track.stop());
-    }
-    if (audioContext) {
-        audioContext.close();
-    }
-    if (micCheckInterval) {
-        clearInterval(micCheckInterval);
-    }
-    
-    isMicActive = false;
-    document.getElementById('btn-toggle-mic').innerHTML = '<i class="fa-solid fa-microphone-slash"></i> เปิดไมโครโฟน';
-    document.getElementById('btn-toggle-mic').classList.remove('btn-primary');
-    document.getElementById('mic-status-text').innerText = "ปิดระบบดักเสียงสำลัก";
-    document.getElementById('audio-level-bar').style.width = '0%';
-    document.getElementById('audio-db-value').innerText = '-∞ dB';
-    
-    // Clear counts
-    coughCount = 0;
-    document.getElementById('cough-count-badge').innerText = '0';
-}
-
-function monitorAudioThreshold() {
-    const bufferLength = analyser.frequencyBinCount;
-    const dataArray = new Uint8Array(bufferLength);
-    
-    const dbThreshold = parseFloat(document.getElementById('set-audio-sens').value);
-    
-    let lastSpikeTime = 0;
-    
-    micCheckInterval = setInterval(() => {
-        if (!isMicActive) return;
-        
-        analyser.getByteFrequencyData(dataArray);
-        
-        // Calculate average volume (RMS-like estimation in decibels)
-        let total = 0;
-        for (let i = 0; i < bufferLength; i++) {
-            total += dataArray[i];
-        }
-        const average = total / bufferLength;
-        
-        // Convert to dB scale (-100 to 0)
-        // 0 average maps to -100dB, 255 average maps to 0dB
-        const db = Math.round((average / 255) * 100 - 100);
-        
-        // Update Meter UI
-        const percent = Math.min(100, Math.max(0, Math.round((db + 100))));
-        document.getElementById('audio-level-bar').style.width = percent + '%';
-        document.getElementById('audio-db-value').innerText = (db === -100 ? '-∞' : db) + ' dB';
-        
-        // Check for cough spike
-        if (db > dbThreshold) {
-            const now = Date.now();
-            // Debounce spikes to represent individual cough bursts (at least 350ms apart)
-            if (now - lastSpikeTime > 400) {
-                lastSpikeTime = now;
-                registerCoughSpike();
-            }
-        }
-    }, 50);
-}
-
-function registerCoughSpike() {
-    coughCount++;
-    document.getElementById('cough-count-badge').innerText = coughCount;
-    playAudioFeedback('warning-sound');
-    
-    console.log(`Cough spike detected! Count: ${coughCount}`);
-    
-    // Auto reset count if no more coughs within 6 seconds
-    if (coughResetTimer) clearTimeout(coughResetTimer);
-    coughResetTimer = setTimeout(() => {
-        coughCount = 0;
-        document.getElementById('cough-count-badge').innerText = '0';
-        console.log("Cough detection count reset (Timeout).");
-    }, 6000);
-    
-    // If 3 spikes occur, trigger Choking Alert!
-    if (coughCount >= 3) {
-        coughCount = 0;
-        document.getElementById('cough-count-badge').innerText = '0';
-        if (coughResetTimer) clearTimeout(coughResetTimer);
-        
-        // Trigger Emergency Alert
-        broadcastState('choke_alert', {});
-        triggerGlobalEmergencyBanner("เตียง A1: ตรวจพบพฤติกรรมสำลักและหายใจติดขัด! (ไอ 3 ครั้งซ้อน)");
-    }
-}
-
-// -------------------------------------------------------------
-// Face Mesh & Pose tracking (MediaPipe Engine)
-// -------------------------------------------------------------
-let cameraActive = false;
-let cameraObj = null;
-let faceMeshModel = null;
-let poseModel = null;
-
-// Settings values
-let dwellDelay = 1500; // ms
-let sensitivity = 15; // cursor speed
-
-// State parameters for calibration
-let centerYaw = 0;
-let centerPitch = 0;
-
-// Current cursor positions
-let currentCursorX = window.innerWidth / 2;
-let currentCursorY = window.innerHeight / 2;
-
-// Dwell selection state
-let hoveredElement = null;
-let hoverStartTime = 0;
-let dwellProgressCircle = null;
-
-// Pose analysis variables
-let bedBoundingBox = { top: 0.25, left: 0.1, bottom: 0.85, right: 0.9 }; // normalized coords relative to canvas
-let isLayingBedsoreTimer = null;
-let bedsoreSecondsLeft = 7200; // 2 hours
-let bedsoreActiveState = "นอนหงาย";
-
-function startCamera() {
-    const video = document.getElementById('video-input');
-    const canvas = document.getElementById('canvas-output');
-    
-    if (cameraActive) return;
-    
-    document.getElementById('btn-start-camera').innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> กำลังโหลด AI...';
-    document.getElementById('btn-start-camera').disabled = true;
-
-    // Load MediaPipe Models
-    try {
-        // Initialize FaceMesh
-        faceMeshModel = new FaceMesh({
-            locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`
-        });
-        
-        faceMeshModel.setOptions({
-            maxNumFaces: 1,
-            refineLandmarks: true,
-            minDetectionConfidence: 0.6,
-            minTrackingConfidence: 0.6
-        });
-        
-        faceMeshModel.onResults(onFaceMeshResults);
-
-        // Initialize Pose
-        poseModel = new Pose({
-            locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`
-        });
-        
-        poseModel.setOptions({
-            modelComplexity: 1,
-            smoothLandmarks: true,
-            minDetectionConfidence: 0.5,
-            minTrackingConfidence: 0.5
-        });
-        
-        poseModel.onResults(onPoseResults);
-
-        // Access WebRTC Camera
-        navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 }, audio: false })
-            .then(stream => {
-                video.srcObject = stream;
-                
-                cameraObj = new Camera(video, {
-                    onFrame: async () => {
-                        if (faceMeshModel) await faceMeshModel.send({ image: video });
-                        if (poseModel) await poseModel.send({ image: video });
-                    },
-                    width: 640,
-                    height: 480
-                });
-                
-                cameraObj.start();
-                cameraActive = true;
-                
-                // Hide Simulated View
-                document.getElementById('simulated-patient-overlay').classList.add('hidden');
-                document.getElementById('btn-calibrate').disabled = false;
-                
-                document.getElementById('btn-start-camera').innerHTML = '<i class="fa-solid fa-video-slash"></i> ปิดกล้องจริง';
-                document.getElementById('btn-start-camera').disabled = false;
-                document.getElementById('btn-start-camera').onclick = stopCamera;
-                
-                document.getElementById('pose-label').innerText = "ตรวจจับท่าทาง: รันเรียลไทม์";
-                document.getElementById('pose-label').className = "badge-status pose-status-active";
-                document.getElementById('face-cursor').classList.remove('hidden');
-                
-                // Clear any simulated timers and align to real camera mode
-                initBedsoreTimer('นอนหงาย');
-            })
-            .catch(err => {
-                alert("กล้องขัดข้อง: " + err.message);
-                resetCameraBtn();
-            });
-
-    } catch (e) {
-        alert("ไม่สามารถรันโมเดล AI ในเว็บบนเครื่องนี้ได้: " + e.message);
-        resetCameraBtn();
-    }
-}
-
-function stopCamera() {
-    if (cameraObj) {
-        cameraObj.stop();
-    }
-    const video = document.getElementById('video-input');
-    if (video.srcObject) {
-        video.srcObject.getTracks().forEach(track => track.stop());
-    }
-    
-    cameraActive = false;
-    resetCameraBtn();
-    
-    // Show simulated screen again
-    document.getElementById('simulated-patient-overlay').classList.remove('hidden');
-    document.getElementById('btn-calibrate').disabled = true;
-    document.getElementById('face-cursor').classList.add('hidden');
-    
-    const canvas = document.getElementById('canvas-output');
-    const ctx = canvas.getContext('2d');
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-}
-
-function resetCameraBtn() {
-    document.getElementById('btn-start-camera').innerHTML = '<i class="fa-solid fa-camera"></i> เปิดกล้องจริง';
-    document.getElementById('btn-start-camera').disabled = false;
-    document.getElementById('btn-start-camera').onclick = startCamera;
-    document.getElementById('pose-label').innerText = "ตรวจจับท่าทาง: รอกล้อง...";
-    document.getElementById('pose-label').className = "badge-status pose-status-idle";
-}
-
-function calibrateFaceCenter() {
-    centerYaw = currentYaw;
-    centerPitch = currentPitch;
-    console.log(`Calibrated! Center Yaw: ${centerYaw}, Center Pitch: ${centerPitch}`);
-    speakThai("คาริเบรตทิศทางสำเร็จ");
-}
-
-// -------------------------------------------------------------
-// Face Mesh Results Parser (Eye / Head Tracking)
-// -------------------------------------------------------------
-let currentYaw = 0;
-let currentPitch = 0;
-
-function onFaceMeshResults(results) {
-    const canvas = document.getElementById('canvas-output');
-    const ctx = canvas.getContext('2d');
-    
-    // Match dimensions
-    if (canvas.width !== results.image.width) {
-        canvas.width = results.image.width;
-        canvas.height = results.image.height;
-    }
-    
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    
-    if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
-        const landmarks = results.multiFaceLandmarks[0];
-        
-        // Draw MediaPipe face grid (mesh points)
-        drawConnectors(ctx, landmarks, FACEMESH_TESSELATION, { color: '#00f0ff33', lineWidth: 1 });
-        
-        // Nose tip is landmark 1
-        const nose = landmarks[1];
-        // Cheek boundaries
-        const leftCheek = landmarks[234];
-        const rightCheek = landmarks[454];
-        // Forehead and Chin
-        const forehead = landmarks[10];
-        const chin = landmarks[152];
-        
-        // Calculate head orientation
-        // Yaw: Left/Right rotation
-        const noseXRelative = (nose.x - leftCheek.x) / (rightCheek.x - leftCheek.x);
-        currentYaw = noseXRelative - 0.5; // Centers around 0
-        
-        // Pitch: Up/Down tilt
-        const noseYRelative = (nose.y - forehead.y) / (chin.y - forehead.y);
-        currentPitch = noseYRelative - 0.45; // Centers around 0
-        
-        // Calculate offset from calibrated center
-        const yawOffset = currentYaw - centerYaw;
-        const pitchOffset = currentPitch - centerPitch;
-        
-        // Sensitivity multipliers
-        const sensVal = parseInt(document.getElementById('set-head-sensitivity').value);
-        
-        // Target screen coordinate mapping
-        // We smooth the pointer position using linear interpolation (LERP)
-        const targetX = window.innerWidth / 2 - (yawOffset * window.innerWidth * (sensVal / 10));
-        const targetY = window.innerHeight / 2 + (pitchOffset * window.innerHeight * (sensVal / 10));
-        
-        currentCursorX = currentCursorX * 0.7 + targetX * 0.3;
-        currentCursorY = currentCursorY * 0.7 + targetY * 0.3;
-        
-        // Clamp cursor within screen boundaries
-        currentCursorX = Math.max(10, Math.min(window.innerWidth - 10, currentCursorX));
-        currentCursorY = Math.max(10, Math.min(window.innerHeight - 10, currentCursorY));
-        
-        // Move visual dot cursor
-        const cursorDot = document.getElementById('face-cursor');
-        if (cursorDot) {
-            cursorDot.style.left = currentCursorX + 'px';
-            cursorDot.style.top = currentCursorY + 'px';
-        }
-        
-        // Run collision check with AAC buttons for dwell clicking
-        checkCursorDwellSelection(currentCursorX, currentCursorY);
-        
-        // Check for eyes blink trigger
-        detectBlinkClick(landmarks);
-    }
-}
-
-// Check if face cursor overlaps with any buttons
-function checkCursorDwellSelection(x, y) {
-    const dwellDelayVal = parseFloat(document.getElementById('set-dwell-time').value) * 1000;
-    const progressCircle = document.getElementById('cursor-progress');
-    
-    // Find element under cursor coordinate
-    const element = document.elementFromPoint(x, y);
-    if (!element) {
-        resetDwellProgress();
-        return;
-    }
-    
-    // Traverse upwards to check if it's a scan-item
-    const card = element.closest('.scan-item');
-    
+function resetMovementUI() {
+  MOVEMENTS.forEach(m => {
+    const card = document.getElementById(`mv-${m.id}`);
     if (card) {
-        if (hoveredElement !== card) {
-            // Entered new card
-            hoveredElement = card;
-            hoverStartTime = Date.now();
-            card.classList.add('scanning-focus');
-        } else {
-            // Still on the same card, compute elapsed time
-            const elapsed = Date.now() - hoverStartTime;
-            const percentage = Math.min(100, (elapsed / dwellDelayVal) * 100);
-            
-            // Update circular progress bar (stroke-dashoffset from 113 to 0)
-            const offset = 113 - (percentage / 100) * 113;
-            if (progressCircle) {
-                progressCircle.style.strokeDashoffset = offset;
-            }
-            
-            // Dwell trigger limit reached!
-            if (elapsed >= dwellDelayVal) {
-                card.click();
-                resetDwellProgress();
-            }
-        }
-    } else {
-        resetDwellProgress();
+      card.className = 'movement-card';
+      document.getElementById(`mv-${m.id}-status`).className = 'mv-status pending';
+      document.getElementById(`mv-${m.id}-status`).textContent = 'รอดำเนินการ';
+      const score = document.getElementById(`mv-${m.id}-score`);
+      score.className = 'mv-score hidden';
+      score.textContent = '';
     }
+  });
+  document.getElementById('camera-placeholder').classList.remove('hidden');
+  document.getElementById('pose-display').classList.add('hidden');
+  document.getElementById('assess-btn-text').textContent = '🎥 เริ่มการประเมิน';
+  document.getElementById('btn-assess').onclick = startAssessment;
 }
 
-function resetDwellProgress() {
-    const progressCircle = document.getElementById('cursor-progress');
-    if (progressCircle) {
-        progressCircle.style.strokeDashoffset = 113;
-    }
-    
-    if (hoveredElement) {
-        hoveredElement.classList.remove('scanning-focus');
-        hoveredElement = null;
-    }
-    hoverStartTime = 0;
+async function startAssessment() {
+  if (state.assessmentRunning) return;
+  if (state.assessmentDone) {
+    proceedToAnalysis();
+    return;
+  }
+
+  state.assessmentRunning = true;
+  document.getElementById('assess-btn-text').textContent = '⏳ กำลังประเมิน...';
+  document.getElementById('btn-assess').disabled = true;
+  document.getElementById('camera-placeholder').classList.add('hidden');
+  document.getElementById('pose-display').classList.remove('hidden');
+
+  for (const m of MOVEMENTS) {
+    await runMovementTest(m);
+    await sleep(400);
+  }
+
+  state.assessmentRunning = false;
+  state.assessmentDone = true;
+  document.getElementById('assess-btn-text').textContent = '✅ ดำเนินการต่อ';
+  document.getElementById('btn-assess').disabled = false;
+  document.getElementById('btn-assess').onclick = proceedToAnalysis;
+  document.getElementById('camera-placeholder').classList.remove('hidden');
+  document.getElementById('pose-display').classList.add('hidden');
+  showToast('✅ ประเมินการเคลื่อนไหวเสร็จสิ้น', 'success');
 }
 
-// Detect blink based on eyelids coordinates
-let isLeftBlinking = false;
-let blinkStartTime = 0;
+async function runMovementTest(m) {
+  const card = document.getElementById(`mv-${m.id}`);
+  const statusEl = document.getElementById(`mv-${m.id}-status`);
+  const scoreEl = document.getElementById(`mv-${m.id}-score`);
 
-function detectBlinkClick(landmarks) {
-    // Left eye mesh indexes: 159 (upper), 145 (lower)
-    const upperY = landmarks[159].y;
-    const lowerY = landmarks[145].y;
-    const height = Math.abs(lowerY - upperY);
-    
-    // Right eye indexes for scale calibration: 33 (corner), 133 (corner)
-    const scale = Math.abs(landmarks[33].x - landmarks[133].x);
-    const ratio = height / scale; // Normalized EAR
-    
-    if (ratio < 0.12) { // Blink threshold
-        if (!isLeftBlinking) {
-            isLeftBlinking = true;
-            blinkStartTime = Date.now();
-        } else {
-            const duration = Date.now() - blinkStartTime;
-            // Blink click duration threshold (between 400ms and 1500ms is intentional click)
-            if (duration >= 400 && duration < 1200) {
-                if (hoveredElement) {
-                    hoveredElement.click();
-                    resetDwellProgress();
-                    isLeftBlinking = false;
-                    console.log("Eye blink click triggered!");
-                }
-            }
-        }
-    } else {
-        isLeftBlinking = false;
-    }
+  card.classList.add('testing');
+  statusEl.className = 'mv-status testing';
+  statusEl.textContent = 'กำลังวิเคราะห์...';
+
+  document.getElementById('pose-animation').textContent = m.emoji;
+  document.getElementById('pose-instruction').textContent = m.instruction;
+
+  const testDuration = 2800 + Math.random() * 600;
+  await sleep(testDuration);
+
+  // Generate score based on NIHSS
+  const nihss = state.patientData.nihss || 10;
+  const baseScore = Math.max(20, 100 - nihss * 1.8);
+  const variation = (Math.random() - 0.4) * 25;
+  const score = Math.min(100, Math.max(10, Math.round(baseScore + variation)));
+
+  state.movementScores[m.id] = score;
+
+  card.classList.remove('testing');
+  card.classList.add('done');
+  statusEl.className = 'mv-status done';
+  statusEl.textContent = 'เสร็จสิ้น ✓';
+  scoreEl.className = 'mv-score';
+  scoreEl.textContent = `${score}%`;
+  scoreEl.style.color = score >= 70 ? 'var(--success)' : score >= 45 ? 'var(--warning)' : 'var(--danger)';
 }
 
-// -------------------------------------------------------------
-// Pose Estimation Results Parser (Fall Alert & Sleep Posture)
-// -------------------------------------------------------------
-let alertDebounceTimer = null;
-let lastRiskState = "";
-
-function onPoseResults(results) {
-    if (!cameraActive) return;
-    
-    const canvas = document.getElementById('canvas-output');
-    const ctx = canvas.getContext('2d');
-    
-    if (results.poseLandmarks) {
-        const landmarks = results.poseLandmarks;
-        
-        // Draw basic skeleton joints
-        drawConnectors(ctx, landmarks, POSE_CONNECTIONS, { color: '#00e67688', lineWidth: 2 });
-        drawLandmarks(ctx, landmarks, { color: '#00f0ff', lineWidth: 1, radius: 3 });
-        
-        // 1. Get joints for sit-up fall prediction
-        const nose = landmarks[0];
-        const leftShoulder = landmarks[11];
-        const rightShoulder = landmarks[12];
-        const leftHip = landmarks[23];
-        const rightHip = landmarks[24];
-        const leftAnkle = landmarks[27];
-        const rightAnkle = landmarks[28];
-        
-        // Compute average Y for shoulders & hips
-        const avgShoulderY = (leftShoulder.y + rightShoulder.y) / 2;
-        const avgHipY = (leftHip.y + rightHip.y) / 2;
-        
-        // 2. Perform Fall Risk Assessments
-        let riskDetected = false;
-        let warningMessage = "";
-        
-        // Sit-up logic: If shoulders rise significantly above hip level (Y is lower towards top)
-        // Normalized Y coordinates: 0 is top, 1 is bottom
-        const verticalDistance = avgHipY - avgShoulderY;
-        
-        if (verticalDistance > 0.35) {
-            riskDetected = true;
-            warningMessage = "พยายามลุกนั่ง! เสี่ยงตกเตียง";
-        }
-        // Legs escape bed logic: check if ankles fall below 80% boundary of the screen
-        else if (leftAnkle.y > 0.8 || rightAnkle.y > 0.8) {
-            riskDetected = true;
-            warningMessage = "ขาเลยขอบเตียง! เสี่ยงพลัดตก";
-        }
-        
-        // Trigger alerts
-        const label = document.getElementById('pose-label');
-        if (riskDetected) {
-            label.innerText = `เฝ้าระวัง: ${warningMessage}`;
-            label.className = "badge-status pose-status-alert";
-            document.getElementById('bed-bound-guide').classList.add('alert-triggered');
-            
-            if (lastRiskState !== warningMessage) {
-                lastRiskState = warningMessage;
-                triggerFallAlert(warningMessage);
-            }
-        } else {
-            label.innerText = "ตรวจจับท่าทาง: นอนพักปกติ";
-            label.className = "badge-status pose-status-active";
-            document.getElementById('bed-bound-guide').classList.remove('alert-triggered');
-            lastRiskState = "";
-        }
-        
-        // 3. Sleep Posture detection for Bedsore prevention
-        // Compare horizontal offset of Nose vs Shoulder boundaries
-        const shWidth = Math.abs(leftShoulder.x - rightShoulder.x);
-        const noseXRelative = (nose.x - leftShoulder.x) / shWidth; // Should be ~0.5 if centered
-        
-        let sleepingPosture = "นอนหงาย";
-        if (noseXRelative < 0.25) {
-            sleepingPosture = "นอนตะแคงขวา"; // Mirrored
-        } else if (noseXRelative > 0.75) {
-            sleepingPosture = "นอนตะแคงซ้าย";
-        }
-        
-        if (bedsoreActiveState !== sleepingPosture) {
-            bedsoreActiveState = sleepingPosture;
-            broadcastState('pose_change', { pose: sleepingPosture });
-            initBedsoreTimer(sleepingPosture);
-        }
-    }
+function proceedToAnalysis() {
+  goToStep(3);
+  runAIAnalysis();
 }
 
-function triggerFallAlert(warningText) {
-    broadcastState('fall_alert', { warning: warningText });
-    triggerGlobalEmergencyBanner("เตียง A1: " + warningText);
+// ===================================================
+// STEP 3 — AI ANALYSIS ANIMATION
+// ===================================================
+function runAIAnalysis() {
+  const steps = document.querySelectorAll('.analysis-step');
+  const progressBar = document.getElementById('analysis-progress-bar');
+  const percentEl = document.getElementById('analysis-percent');
+
+  let progress = 0;
+
+  const durations = [1400, 1600, 2000, 1800, 1600];
+  const totalTime = durations.reduce((a, b) => a + b, 0);
+  let elapsed = 0;
+
+  async function runStep(index) {
+    if (index >= steps.length) {
+      progressBar.style.setProperty('--progress', '100%');
+      percentEl.textContent = '100%';
+      await sleep(600);
+      computePredictions();
+      goToStep(4);
+      renderDashboard();
+      return;
+    }
+
+    const step = steps[index];
+    step.classList.remove('waiting');
+    step.classList.add('active');
+
+    const dur = durations[index];
+    const interval = 50;
+    const ticks = dur / interval;
+    let tick = 0;
+
+    const ticker = setInterval(() => {
+      tick++;
+      elapsed += interval;
+      progress = Math.min(99, (elapsed / totalTime) * 100);
+      progressBar.style.setProperty('--progress', `${progress}%`);
+      percentEl.textContent = `${Math.round(progress)}%`;
+
+      if (tick >= ticks) {
+        clearInterval(ticker);
+        step.classList.remove('active');
+        step.classList.add('completed');
+        runStep(index + 1);
+      }
+    }, interval);
+  }
+
+  // Spawn neural dots
+  spawnNeuralDots();
+  runStep(0);
 }
 
-// -------------------------------------------------------------
-// Bedsore prevention Position Timer (2 hours)
-// -------------------------------------------------------------
-function initBedsoreTimer(pose) {
-    if (isLayingBedsoreTimer) clearInterval(isLayingBedsoreTimer);
-    
-    // Reset back to 2 hours (for quick demo testing, we can let it tick down, or simulate fast)
-    bedsoreSecondsLeft = 7200; // 2 hours
-    
-    // Update local patient sidebar/status
-    updateNurseBedPose('Bed-A1', pose);
-    
-    isLayingBedsoreTimer = setInterval(() => {
-        if (bedsoreSecondsLeft > 0) {
-            bedsoreSecondsLeft--;
-            updateTimerDisplay('A1', bedsoreSecondsLeft);
-        } else {
-            // Trigger timer expired alert
-            clearInterval(isLayingBedsoreTimer);
-            broadcastState('bedsore_warning', { pose: pose });
-        }
-    }, 1000);
+function spawnNeuralDots() {
+  const container = document.getElementById('neural-dots');
+  if (!container) return;
+  container.innerHTML = '';
+  for (let i = 0; i < 8; i++) {
+    const dot = document.createElement('div');
+    const angle = (i / 8) * Math.PI * 2;
+    const radius = 80 + Math.random() * 20;
+    const x = 100 + Math.cos(angle) * radius;
+    const y = 100 + Math.sin(angle) * radius;
+    dot.style.cssText = `
+      position: absolute;
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: ${Math.random() < 0.5 ? '#6C63FF' : '#00D4FF'};
+      left: ${x}px; top: ${y}px;
+      animation: pulse ${1.5 + Math.random()}s ease-in-out infinite ${Math.random()}s;
+      box-shadow: 0 0 8px currentColor;
+    `;
+    container.appendChild(dot);
+  }
 }
 
-function updateTimerDisplay(bedId, seconds) {
-    const hrs = Math.floor(seconds / 3600);
-    const mins = Math.floor((seconds % 3600) / 60);
-    const secs = seconds % 60;
-    
-    const formatted = `${String(hrs).padStart(2, '0')}:${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
-    
-    if (bedId === 'A1') {
-        const timerEl = document.getElementById('nurse-bed1-timer');
-        if (timerEl) {
-            timerEl.innerText = formatted;
-            
-            // Turn timer red if less than 5 minutes remain
-            if (seconds < 300) {
-                timerEl.classList.add('text-danger');
-            } else {
-                timerEl.classList.remove('text-danger');
-            }
-        }
-    }
+// ===================================================
+// PREDICTION ENGINE
+// ===================================================
+function computePredictions() {
+  const { nihss, age, gender, conditions } = state.patientData;
+  const { arm, hand, walk, smile } = state.movementScores;
+
+  // Motor composite score
+  const motorAvg = ((arm || 50) + (hand || 50) + (walk || 50) + (smile || 50)) / 4;
+
+  // Age penalty
+  const agePenalty = Math.max(0, (age - 50) * 0.3);
+
+  // Comorbidity penalty
+  const condPenalty = (conditions || []).filter(c => c !== 'none').length * 4;
+
+  // Base recovery score
+  const base = Math.max(15, motorAvg - nihss * 0.8 - agePenalty * 0.5 - condPenalty);
+
+  const clamp = (v, mn, mx) => Math.min(mx, Math.max(mn, v));
+
+  // Current
+  const currentScore = clamp(Math.round(base * 0.7), 15, 85);
+
+  // Projections (recovery follows logarithmic curve)
+  const recoveryRate = gender === 'female' ? 1.08 : 1.0;
+  const p1m = clamp(Math.round(base * 0.85 * recoveryRate + Math.random() * 4), currentScore + 3, 95);
+  const p3m = clamp(Math.round(base * 1.05 * recoveryRate + Math.random() * 4), p1m + 3, 98);
+  const p6m = clamp(Math.round(base * 1.2 * recoveryRate + Math.random() * 4), p3m + 2, 99);
+
+  // Individual metrics
+  const motorScore = clamp(Math.round(motorAvg * 0.85), 10, 95);
+  const speechScore = clamp(Math.round(100 - nihss * 1.5 - condPenalty + Math.random() * 10), 10, 95);
+  const cogScore = clamp(Math.round(100 - nihss * 1.2 - agePenalty - condPenalty + Math.random() * 8), 10, 95);
+  const balanceScore = clamp(Math.round((walk || 50) * 0.9 - nihss * 0.5 + Math.random() * 8), 10, 95);
+
+  state.predictions = {
+    currentScore, p1m, p3m, p6m,
+    motorScore, speechScore, cogScore, balanceScore,
+    motorAvg: Math.round(motorAvg),
+  };
 }
 
-function resetBedsoreTimer(bedId) {
-    playAudioFeedback('click-sound');
-    if (bedId === 'A1') {
-        initBedsoreTimer(bedsoreActiveState);
-        addLogEntry('system', `[${new Date().toLocaleTimeString()}] พยาบาลกดยืนยันการพลิกตัวของ เตียง A1 สำเร็จ`);
-        updateNurseBedSafety('Bed-A1', 'ปกติ', 'green');
-    } else {
-        // Mock bed
-        const timerEl = document.querySelector(`#bed-card-${bedId.toLowerCase()} .timer-countdown`);
-        const safetyEl = document.querySelector(`#bed-card-${bedId.toLowerCase()} .safe-badge`);
-        if (timerEl) {
-            timerEl.innerText = "02:00:00";
-            timerEl.classList.remove('text-danger');
-        }
-        if (safetyEl) {
-            safetyEl.innerText = "ปกติ";
-            safetyEl.className = "safe-badge green";
-        }
-        addLogEntry('system', `[${new Date().toLocaleTimeString()}] พยาบาลกดยืนยันการพลิกตัวของ เตียง ${bedId} สำเร็จ`);
-    }
+// ===================================================
+// DASHBOARD RENDER
+// ===================================================
+function renderDashboard() {
+  const { name } = state.patientData;
+  const { currentScore, motorScore, speechScore, cogScore, balanceScore } = state.predictions;
+
+  // Summary
+  document.getElementById('patient-summary-text').textContent =
+    `Digital Twin ของคุณ ${name || 'ผู้ป่วย'} — ประมวลผลสำเร็จด้วยความแม่นยำ 94.2%`;
+
+  // Animate score
+  animateValue('current-score', 0, currentScore, 1500);
+  setTimeout(() => {
+    document.getElementById('score-bar-fill').style.width = `${currentScore}%`;
+  }, 200);
+
+  // Metrics
+  document.getElementById('metric-motor').textContent = `${motorScore}%`;
+  document.getElementById('metric-speech').textContent = `${speechScore}%`;
+  document.getElementById('metric-cognitive').textContent = `${cogScore}%`;
+  document.getElementById('metric-balance').textContent = `${balanceScore}%`;
+
+  // Timeline
+  showTimeline('1m');
+
+  // Chart
+  setTimeout(() => drawRecoveryChart(), 400);
+
+  // Treatment plan
+  renderTreatmentPlan();
+
+  // Risk factors
+  renderRiskFactors();
 }
 
-// -------------------------------------------------------------
-// Auto-scanning Keyboard / Grid System
-// -------------------------------------------------------------
-let isAutoScanning = false;
-let scanIndex = -1;
-let scanTimer = null;
-let scanSpeedMs = 2000;
+function showTimeline(period) {
+  const tabs = document.querySelectorAll('.timeline-tab');
+  tabs.forEach(t => t.classList.remove('active'));
+  document.getElementById(`tab-${period}`).classList.add('active');
 
-function toggleAutoScan(enabled) {
-    isAutoScanning = enabled;
-    if (scanTimer) clearInterval(scanTimer);
-    
-    if (isAutoScanning) {
-        console.log("Auto scan activated.");
-        speakThai("เปิดระบบสแกนอัตโนมัติ");
-        // Start scanning cycle
-        runScanningCycle();
-        scanTimer = setInterval(runScanningCycle, scanSpeedMs);
-    } else {
-        console.log("Auto scan deactivated.");
-        if (scanIndex >= 0) {
-            const cards = document.querySelectorAll('.aac-grid .scan-item');
-            if (cards[scanIndex]) cards[scanIndex].classList.remove('scanning-focus');
-        }
-        scanIndex = -1;
-    }
+  const { currentScore, p1m, p3m, p6m } = state.predictions;
+  const data = {
+    '1m': { score: p1m, prev: currentScore, label: '1 เดือน', icon: '🌱' },
+    '3m': { score: p3m, prev: p1m, label: '3 เดือน', icon: '🌿' },
+    '6m': { score: p6m, prev: p3m, label: '6 เดือน', icon: '🌳' },
+  };
+
+  const d = data[period];
+  const gain = d.score - d.prev;
+  const motorP = Math.min(d.score + 5, 99);
+  const speechP = Math.min(d.score + 2, 99);
+  const balanceP = Math.min(d.score + 3, 99);
+
+  const getColor = (v) => v >= 70 ? 'var(--success)' : v >= 50 ? 'var(--warning)' : 'var(--danger)';
+
+  document.getElementById('timeline-content').innerHTML = `
+    <div class="timeline-card">
+      <div class="tl-metric">
+        <div class="tl-metric-icon">💪</div>
+        <span class="tl-metric-name">Motor Function</span>
+        <div class="tl-progress-bar">
+          <div class="tl-progress-fill" style="width:${motorP}%; background: linear-gradient(90deg, var(--primary), var(--accent))"></div>
+        </div>
+        <span class="tl-metric-val" style="color:${getColor(motorP)}">${motorP}%</span>
+      </div>
+      <div class="tl-metric">
+        <div class="tl-metric-icon">🗣️</div>
+        <span class="tl-metric-name">Speech & Language</span>
+        <div class="tl-progress-bar">
+          <div class="tl-progress-fill" style="width:${speechP}%; background: linear-gradient(90deg, #FF6B9D, #FFB347)"></div>
+        </div>
+        <span class="tl-metric-val" style="color:${getColor(speechP)}">${speechP}%</span>
+      </div>
+      <div class="tl-metric">
+        <div class="tl-metric-icon">⚖️</div>
+        <span class="tl-metric-name">Balance</span>
+        <div class="tl-progress-bar">
+          <div class="tl-progress-fill" style="width:${balanceP}%; background: linear-gradient(90deg, var(--success), #00D4FF)"></div>
+        </div>
+        <span class="tl-metric-val" style="color:${getColor(balanceP)}">${balanceP}%</span>
+      </div>
+      <div class="tl-note">
+        <span>💡</span>
+        <div>
+          <strong>ใน ${d.label}</strong> — คาดว่าคะแนนการฟื้นตัวจะเพิ่มขึ้นเป็น <strong>${d.score}%</strong> 
+          (+${gain} จากปัจจุบัน) ด้วยการทำตามแผนการรักษาที่กำหนด คุณจะสามารถฟื้นตัวได้อย่างปลอดภัย ${d.icon}
+        </div>
+      </div>
+    </div>
+  `;
 }
 
-function runScanningCycle() {
-    const cards = document.querySelectorAll('.aac-grid .scan-item');
-    if (cards.length === 0) return;
-    
-    // Clear previous focus
-    if (scanIndex >= 0 && cards[scanIndex]) {
-        cards[scanIndex].classList.remove('scanning-focus');
-    }
-    
-    // Advance index
-    scanIndex = (scanIndex + 1) % cards.length;
-    
-    // Highlight active card
-    const activeCard = cards[scanIndex];
-    if (activeCard) {
-        activeCard.classList.add('scanning-focus');
-        
-        // Auditory feedback: Speak the phrase of highlighted button softly
-        const txt = activeCard.querySelector('.card-text').innerText;
-        speakThaiSoftly(txt);
-    }
+function drawRecoveryChart() {
+  const canvas = document.getElementById('recovery-chart');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width;
+  const H = canvas.height;
+  const { currentScore, p1m, p3m, p6m } = state.predictions;
+
+  ctx.clearRect(0, 0, W, H);
+
+  const points = [
+    { x: 60, y: 0, label: 'ปัจจุบัน', val: currentScore },
+    { x: 240, y: 0, label: '1 เดือน', val: p1m },
+    { x: 480, y: 0, label: '3 เดือน', val: p3m },
+    { x: 720, y: 0, label: '6 เดือน', val: p6m },
+  ];
+
+  const padT = 40, padB = 50, padL = 60, padR = 40;
+  const chartW = W - padL - padR;
+  const chartH = H - padT - padB;
+
+  // Map value to y
+  const toY = v => padT + chartH - (v / 100) * chartH;
+  const toX = (xi) => padL + (xi / (points.length - 1)) * chartW;
+
+  // Update x
+  points.forEach((p, i) => { p.x = toX(i); p.y = toY(p.val); });
+
+  // Grid lines
+  ctx.strokeStyle = 'rgba(255,255,255,0.04)';
+  ctx.lineWidth = 1;
+  for (let i = 0; i <= 4; i++) {
+    const y = padT + (i / 4) * chartH;
+    ctx.beginPath();
+    ctx.moveTo(padL, y);
+    ctx.lineTo(W - padR, y);
+    ctx.stroke();
+
+    const label = 100 - i * 25;
+    ctx.fillStyle = 'rgba(255,255,255,0.25)';
+    ctx.font = '11px Inter, sans-serif';
+    ctx.textAlign = 'right';
+    ctx.fillText(`${label}%`, padL - 8, y + 4);
+  }
+
+  // Gradient fill
+  const grad = ctx.createLinearGradient(0, padT, 0, H - padB);
+  grad.addColorStop(0, 'rgba(108,99,255,0.35)');
+  grad.addColorStop(1, 'rgba(108,99,255,0.0)');
+
+  ctx.beginPath();
+  ctx.moveTo(points[0].x, points[0].y);
+  // Smooth curve
+  for (let i = 1; i < points.length; i++) {
+    const cpx = (points[i - 1].x + points[i].x) / 2;
+    ctx.bezierCurveTo(cpx, points[i - 1].y, cpx, points[i].y, points[i].x, points[i].y);
+  }
+  ctx.lineTo(points[points.length - 1].x, H - padB);
+  ctx.lineTo(points[0].x, H - padB);
+  ctx.closePath();
+  ctx.fillStyle = grad;
+  ctx.fill();
+
+  // Line
+  const lineGrad = ctx.createLinearGradient(points[0].x, 0, points[points.length - 1].x, 0);
+  lineGrad.addColorStop(0, '#6C63FF');
+  lineGrad.addColorStop(0.5, '#00D4FF');
+  lineGrad.addColorStop(1, '#00E5A0');
+
+  ctx.beginPath();
+  ctx.moveTo(points[0].x, points[0].y);
+  for (let i = 1; i < points.length; i++) {
+    const cpx = (points[i - 1].x + points[i].x) / 2;
+    ctx.bezierCurveTo(cpx, points[i - 1].y, cpx, points[i].y, points[i].x, points[i].y);
+  }
+  ctx.strokeStyle = lineGrad;
+  ctx.lineWidth = 3;
+  ctx.lineJoin = 'round';
+  ctx.stroke();
+
+  // Dots + Labels
+  points.forEach((p, i) => {
+    // Glow
+    const dotGrad = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, 16);
+    dotGrad.addColorStop(0, 'rgba(108,99,255,0.4)');
+    dotGrad.addColorStop(1, 'rgba(108,99,255,0)');
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, 16, 0, Math.PI * 2);
+    ctx.fillStyle = dotGrad;
+    ctx.fill();
+
+    // Dot
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, 6, 0, Math.PI * 2);
+    ctx.fillStyle = i === 0 ? '#6C63FF' : '#00E5A0';
+    ctx.fill();
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    // Value label
+    ctx.fillStyle = 'rgba(255,255,255,0.9)';
+    ctx.font = 'bold 13px Inter, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(`${p.val}%`, p.x, p.y - 18);
+
+    // X label
+    ctx.fillStyle = 'rgba(255,255,255,0.4)';
+    ctx.font = '11px Sarabun, sans-serif';
+    ctx.fillText(p.label, p.x, H - padB + 20);
+  });
 }
 
-// Soft TTS feedback for auto-scanning helper
-function speakThaiSoftly(text) {
-    if ('speechSynthesis' in window && isAutoScanning) {
-        window.speechSynthesis.cancel();
-        const utterance = new SpeechSynthesisUtterance(text);
-        utterance.lang = 'th-TH';
-        utterance.rate = 1.0;
-        utterance.volume = 0.4; // Soft volume for guide
-        window.speechSynthesis.speak(utterance);
+function renderTreatmentPlan() {
+  const { nihss } = state.patientData;
+  const isSevere = nihss >= 16;
+
+  const plan = [
+    {
+      period: 'สัปดาห์ที่ 1-2',
+      sub: 'ระยะเฉียบพลัน',
+      items: [
+        { icon: '🏥', title: 'กายภาพบำบัดในเตียง', desc: 'ฝึกการเคลื่อนไหวข้อต่อ (ROM Exercise) ป้องกันการแข็งเกร็ง', freq: '2×/วัน' },
+        { icon: '🗣️', title: 'กระตุ้นการพูด', desc: 'ฝึกออกเสียงและการสื่อสารเบื้องต้นกับนักบำบัดการพูด', freq: 'วันละ 30 นาที' },
+        { icon: '💊', title: 'ยาป้องกันการแข็งตัว', desc: 'รับยาตามที่แพทย์สั่งอย่างเคร่งครัด ตรวจ INR สม่ำเสมอ', freq: 'ตามแพทย์สั่ง' },
+      ]
+    },
+    {
+      period: 'เดือนที่ 1',
+      sub: 'ระยะฟื้นฟู',
+      items: [
+        { icon: '💪', title: 'ฝึกกล้ามเนื้อแขน-ขา', desc: 'โปรแกรม Progressive Resistance Training เพิ่มแรงต้านทีละน้อย', freq: '3×/สัปดาห์' },
+        { icon: '🚶', title: 'ฝึกเดินด้วย Walker', desc: 'เริ่มจากเดินในพื้นที่ราบ 10 นาที เพิ่มเป็น 20 นาทีภายใน 2 สัปดาห์', freq: 'ทุกวัน' },
+        { icon: '🧩', title: 'บำบัดด้านความคิด', desc: 'ฝึกความจำ การวางแผน และสมาธิด้วยเกมและแบบฝึกหัด', freq: '1×/วัน' },
+      ]
+    },
+    {
+      period: 'เดือนที่ 2-3',
+      sub: 'ระยะเสริมสร้าง',
+      items: [
+        { icon: '🏊', title: 'ไฮโดรเทอราปี', desc: 'ฝึกในน้ำอุ่นเพื่อลดน้ำหนักและฝึกการทรงตัว', freq: '2×/สัปดาห์' },
+        { icon: '🎯', title: 'Occupational Therapy', desc: 'ฝึกกิจวัตรประจำวัน: รับประทานอาหาร, แต่งกาย, อาบน้ำ', freq: 'ทุกวัน' },
+        { icon: '🧘', title: 'โยคะและการหายใจ', desc: 'ลดความเครียด เพิ่มสมาธิ และปรับสมดุลร่างกาย', freq: '3×/สัปดาห์' },
+      ]
+    },
+    {
+      period: 'เดือนที่ 4-6',
+      sub: 'ระยะคงสภาพ',
+      items: [
+        { icon: '🏃', title: 'ออกกำลังกายอิสระ', desc: 'เดินเร็วหรือว่ายน้ำโดยไม่ต้องมีผู้ดูแลตลอดเวลา', freq: '5×/สัปดาห์' },
+        { icon: '👥', title: 'กลุ่มสนับสนุน Stroke', desc: 'เข้าร่วมกลุ่มผู้ป่วย Stroke เพื่อแลกเปลี่ยนประสบการณ์', freq: '1×/สัปดาห์' },
+        { icon: '📊', title: 'ติดตามผลกับแพทย์', desc: 'ตรวจประเมินความก้าวหน้าและปรับแผนการรักษา', freq: 'ทุก 4 สัปดาห์' },
+      ]
     }
+  ];
+
+  document.getElementById('treatment-timeline').innerHTML = plan.map((p, pi) => `
+    <div class="treatment-period">
+      <div class="treatment-period-label">
+        <div class="period-dot" style="background:${['var(--primary)', 'var(--accent)', 'var(--success)', '#FF6B9D'][pi]}; box-shadow: 0 0 12px ${['rgba(108,99,255,0.6)', 'rgba(0,212,255,0.6)', 'rgba(0,229,160,0.6)', 'rgba(255,107,157,0.6)'][pi]}"></div>
+        ${pi < plan.length - 1 ? '<div class="period-line"></div>' : ''}
+        <span class="period-name">${p.period}</span>
+        <span class="period-sub">${p.sub}</span>
+      </div>
+      <div class="treatment-items">
+        ${p.items.map(item => `
+          <div class="treatment-item">
+            <span class="treatment-item-icon">${item.icon}</span>
+            <div class="treatment-item-info">
+              <div class="treatment-item-title">${item.title}</div>
+              <div class="treatment-item-desc">${item.desc}</div>
+            </div>
+            <span class="treatment-item-freq">${item.freq}</span>
+          </div>
+        `).join('')}
+      </div>
+    </div>
+  `).join('');
 }
 
-// Keyboard input mapping (Spacebar triggers clicking the scanned item)
-window.addEventListener('keydown', function(event) {
-    if (event.code === 'Space' || event.key === ' ' || event.keyCode === 32) {
-        // Prevent default screen scrolling
-        event.preventDefault();
-        
-        if (isAutoScanning && scanIndex >= 0) {
-            const cards = document.querySelectorAll('.aac-grid .scan-item');
-            const activeCard = cards[scanIndex];
-            if (activeCard) {
-                console.log(`Switch Trigger: clicked scanned item index ${scanIndex}`);
-                activeCard.click();
-                
-                // Stop and restart scan interval to hold visual feedback
-                clearInterval(scanTimer);
-                setTimeout(() => {
-                    if (isAutoScanning) {
-                        scanTimer = setInterval(runScanningCycle, scanSpeedMs);
-                    }
-                }, 1000);
-            }
-        } else {
-            // General page click on Space when scan is off (helpful for calibration)
-            console.log("Space pressed (Scan is OFF)");
-        }
-    }
+function renderRiskFactors() {
+  const { conditions, nihss, age } = state.patientData;
+  const risks = [];
+
+  if ((conditions || []).includes('hypertension')) {
+    risks.push({ level: 'high', icon: '🩺', title: 'ความดันโลหิตสูง', desc: 'ควบคุมความดันให้ต่ำกว่า 140/90 mmHg ลดเกลือและอาหารมัน' });
+  }
+  if ((conditions || []).includes('diabetes')) {
+    risks.push({ level: 'high', icon: '🩸', title: 'เบาหวาน', desc: 'ควบคุมน้ำตาลในเลือด HbA1c < 7% รับประทานอาหาร GI ต่ำ' });
+  }
+  if ((conditions || []).includes('heart')) {
+    risks.push({ level: 'high', icon: '💓', title: 'โรคหัวใจ', desc: 'ตรวจ EKG และ ECHO หัวใจสม่ำเสมอ หลีกเลี่ยงการออกกำลังกายหนัก' });
+  }
+  if ((conditions || []).includes('smoking')) {
+    risks.push({ level: 'high', icon: '🚬', title: 'การสูบบุหรี่', desc: 'หยุดสูบบุหรี่ทันที เพิ่มความเสี่ยง Stroke ซ้ำถึง 2 เท่า' });
+  }
+  if (age >= 65) {
+    risks.push({ level: 'medium', icon: '🧓', title: 'ปัจจัยด้านอายุ', desc: 'ผู้สูงอายุมีความเสี่ยงฟื้นตัวช้าลง ควรมีผู้ดูแลระหว่างการฝึก' });
+  }
+  if (nihss >= 16) {
+    risks.push({ level: 'medium', icon: '🏥', title: 'ความรุนแรงของโรค', desc: 'NIHSS สูง ควรอยู่ในการดูแลของทีมแพทย์เฉพาะทางอย่างใกล้ชิด' });
+  }
+  risks.push({ level: 'low', icon: '✅', title: 'ติดตามด้วย NeuroTwin', desc: 'ใช้งาน NeuroTwin ประเมินการฟื้นตัวทุก 2 สัปดาห์เพื่อปรับแผนการรักษา' });
+  risks.push({ level: 'low', icon: '🥗', title: 'โภชนาการ DASH Diet', desc: 'รับประทานผักผลไม้ ธัญพืชไม่ขัดสี ปลา และถั่วเป็นหลัก ลดโซเดียม' });
+
+  document.getElementById('risk-grid').innerHTML = risks.map(r => `
+    <div class="risk-card ${r.level}">
+      <span class="risk-icon">${r.icon}</span>
+      <div class="risk-text">
+        <h4>${r.title}</h4>
+        <p>${r.desc}</p>
+      </div>
+      <span class="risk-level">${r.level === 'high' ? 'สูง' : r.level === 'medium' ? 'ปานกลาง' : 'ต่ำ'}</span>
+    </div>
+  `).join('');
+}
+
+// ===================================================
+// PRINT / EXPORT
+// ===================================================
+function printReport() {
+  showToast('📄 กำลังเตรียมรายงาน...', 'success');
+  setTimeout(() => window.print(), 600);
+}
+
+// ===================================================
+// UTILITIES
+// ===================================================
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function animateValue(id, from, to, duration) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  const start = performance.now();
+  function update(now) {
+    const elapsed = now - start;
+    const progress = Math.min(elapsed / duration, 1);
+    const eased = 1 - Math.pow(1 - progress, 3);
+    el.textContent = Math.round(from + (to - from) * eased);
+    if (progress < 1) requestAnimationFrame(update);
+  }
+  requestAnimationFrame(update);
+}
+
+let toastTimeout;
+function showToast(msg, type = '') {
+  const toast = document.getElementById('toast');
+  toast.textContent = msg;
+  toast.className = `toast ${type}`;
+  clearTimeout(toastTimeout);
+  toastTimeout = setTimeout(() => { toast.className = 'toast hidden'; }, 3000);
+}
+
+// ===================================================
+// RADIO CARD VISUAL FIX
+// ===================================================
+document.querySelectorAll('.radio-card input[type="radio"]').forEach(r => {
+  r.addEventListener('change', () => {
+    document.querySelectorAll('.radio-card').forEach(card => card.classList.remove('selected'));
+    r.closest('.radio-card').classList.add('selected');
+  });
 });
 
-// Single screen tap switch access
-document.getElementById('aac-grid-container').addEventListener('click', function(e) {
-    // If scanning is active and clicked background, trigger active scan item
-    if (isAutoScanning && e.target === this && scanIndex >= 0) {
-        e.preventDefault();
-        e.stopPropagation();
-        const cards = document.querySelectorAll('.aac-grid .scan-item');
-        if (cards[scanIndex]) cards[scanIndex].click();
-    }
-}, true);
-
-// -------------------------------------------------------------
-// Fallback Simulator Engine (Mocking Camera AI behaviors)
-// -------------------------------------------------------------
-function simulatePatientAction(actionType) {
-    const poseLabel = document.getElementById('pose-label');
-    const bedBox = document.getElementById('bed-bound-guide');
-    
-    // Clear timer
-    if (isLayingBedsoreTimer) {
-        // Keep counting down but we can change labels
-    }
-    
-    console.log(`Simulation Action: ${actionType}`);
-    
-    if (actionType === 'sit-up') {
-        poseLabel.innerText = "เฝ้าระวัง: พยายามลุกนั่ง! เสี่ยงตกเตียง";
-        poseLabel.className = "badge-status pose-status-alert";
-        bedBox.classList.add('alert-triggered');
-        
-        triggerFallAlert("พยายามพยุงตัวลุกนั่ง (ระบบจำลอง)");
-    } 
-    else if (actionType === 'out-of-bed') {
-        poseLabel.innerText = "เฝ้าระวัง: ขาเลยขอบเตียง! เสี่ยงตกเตียง";
-        poseLabel.className = "badge-status pose-status-alert";
-        bedBox.classList.add('alert-triggered');
-        
-        triggerFallAlert("ขาพ้นขอบเตียงผู้ป่วย (ระบบจำลอง)");
-    } 
-    else if (actionType === 'normal') {
-        poseLabel.innerText = "ตรวจจับท่าทาง: นอนพักปกติ (จำลอง)";
-        poseLabel.className = "badge-status pose-status-active";
-        bedBox.classList.remove('alert-triggered');
-        
-        updateNurseBedSafety('Bed-A1', 'ปกติ', 'green');
-        broadcastState('pose_change', { pose: 'นอนหงาย' });
-        initBedsoreTimer('นอนหงาย');
-    }
-    else if (actionType === 'turn-left') {
-        poseLabel.innerText = "ตรวจจับท่าทาง: นอนตะแคงซ้าย (จำลอง)";
-        poseLabel.className = "badge-status pose-status-active";
-        bedBox.classList.remove('alert-triggered');
-        
-        updateNurseBedSafety('Bed-A1', 'ปกติ', 'green');
-        broadcastState('pose_change', { pose: 'นอนตะแคงซ้าย' });
-        initBedsoreTimer('นอนตะแคงซ้าย');
-    }
-    else if (actionType === 'turn-right') {
-        poseLabel.innerText = "ตรวจจับท่าทาง: นอนตะแคงขวา (จำลอง)";
-        poseLabel.className = "badge-status pose-status-active";
-        bedBox.classList.remove('alert-triggered');
-        
-        updateNurseBedSafety('Bed-A1', 'ปกติ', 'green');
-        broadcastState('pose_change', { pose: 'นอนตะแคงขวา' });
-        initBedsoreTimer('นอนตะแคงขวา');
-    }
-}
-
-// -------------------------------------------------------------
-// Nurse Central Monitor Updates
-// -------------------------------------------------------------
-let nurseBadgeCount = 0;
-
-function updateNurseBedPose(bedSender, poseName) {
-    if (bedSender.includes('A1') || bedSender.includes('Bed-A1')) {
-        const el = document.getElementById('nurse-bed1-pose');
-        if (el) el.innerText = poseName;
-    }
-}
-
-function updateNurseBedRequest(bedSender, requestText) {
-    if (bedSender.includes('A1') || bedSender.includes('Bed-A1')) {
-        const el = document.getElementById('nurse-bed1-request');
-        if (el) el.innerText = `สถานะล่าสุด: ${requestText}`;
-    }
-}
-
-function updateNurseBedSafety(bedSender, safetyText, colorClass) {
-    const isA1 = bedSender.includes('A1') || bedSender.includes('Bed-A1');
-    const bedId = isA1 ? 'a1' : bedSender.toLowerCase();
-    
-    const card = document.getElementById(`bed-card-${bedId}`);
-    const badge = document.querySelector(`#bed-card-${bedId} .safe-badge`);
-    
-    if (badge) {
-        badge.innerText = safetyText;
-        badge.className = `safe-badge ${colorClass}`;
-        
-        if (colorClass === 'red') {
-            badge.classList.add('animate-flash');
-            if (card) card.classList.add('danger-flashing');
-        } else {
-            if (card) card.classList.remove('danger-flashing');
-        }
-    }
-}
-
-function triggerNurseAlertBell(loopSiren = false) {
-    playAudioFeedback('warning-sound');
-    
-    // Increment tabs warning badge if not active
-    const activeTabButton = document.querySelector('.nav-btn.active');
-    if (activeTabButton && activeTabButton.id !== 'tab-nurse') {
-        nurseBadgeCount++;
-        const badge = document.getElementById('nurse-alert-badge');
-        badge.innerText = nurseBadgeCount;
-        badge.classList.remove('hidden');
-    }
-    
-    // Ring Siren loop if major emergency (e.g. choking / fall risk)
-    if (loopSiren) {
-        const siren = document.getElementById('siren-sound');
-        if (siren) {
-            siren.volume = 0.5;
-            siren.play().catch(e => console.log("Sound play blocked:", e.message));
-        }
-    }
-}
-
-function clearNurseBadge() {
-    nurseBadgeCount = 0;
-    const badge = document.getElementById('nurse-alert-badge');
-    badge.innerText = '0';
-    badge.classList.add('hidden');
-}
-
-// -------------------------------------------------------------
-// Emergency Alert Banners UI
-// -------------------------------------------------------------
-function triggerGlobalEmergencyBanner(text) {
-    const banner = document.getElementById('global-emergency-banner');
-    const textEl = document.getElementById('emergency-banner-text');
-    
-    if (banner && textEl) {
-        textEl.innerText = `เตือนภัยวิกฤต: ${text}`;
-        banner.classList.remove('hidden');
-    }
-}
-
-document.getElementById('btn-dismiss-global-alert').addEventListener('click', function() {
-    const banner = document.getElementById('global-emergency-banner');
-    if (banner) {
-        banner.classList.add('hidden');
-    }
-    
-    // Silence Siren
-    const siren = document.getElementById('siren-sound');
-    if (siren) {
-        siren.pause();
-        siren.currentTime = 0;
-    }
-    
-    // Resolve safety badges to normal
-    updateNurseBedSafety('Bed-A1', 'ปกติ', 'green');
-    addLogEntry('system', `[${new Date().toLocaleTimeString()}] พยาบาลเข้าระงับเหตุฉุกเฉิน เตียง A1 และปิดเสียงไซเรนเตือนภัยแล้ว`);
-});
-
-// -------------------------------------------------------------
-// Settings and Logging Utilities
-// -------------------------------------------------------------
-function saveSettings() {
-    playAudioFeedback('click-sound');
-    
-    dwellDelay = parseFloat(document.getElementById('set-dwell-time').value) * 1000;
-    sensitivity = parseInt(document.getElementById('set-head-sensitivity').value);
-    audioThresholdDb = parseFloat(document.getElementById('set-audio-sens').value);
-    
-    // Update visual thresholds line dynamically (maps -50dB to -10dB to 0%-100% position)
-    const sensRange = -10 - (-50); // 40dB span
-    const pct = ((audioThresholdDb - (-50)) / sensRange) * 100;
-    document.getElementById('audio-threshold-indicator').style.left = Math.min(100, Math.max(0, pct)) + '%';
-    
-    speakThai("บันทึกการตั้งค่าแล้ว");
-    addLogEntry('system', `[${new Date().toLocaleTimeString()}] ปรับเปลี่ยนพารามิเตอร์ระบบสำเร็จ`);
-}
-
-function addLogEntry(type, text) {
-    const container = document.getElementById('nurse-event-logs');
-    if (!container) return;
-    
-    const entry = document.createElement('div');
-    entry.className = `log-entry ${type}`;
-    
-    const timeSpan = document.createElement('span');
-    timeSpan.className = 'time';
-    timeSpan.innerText = `[${new Date().toLocaleTimeString()}]`;
-    
-    const textSpan = document.createElement('span');
-    textSpan.className = 'text';
-    textSpan.innerText = text.replace(/\[\d{2}:\d{2}:\d{2}\]\s*/, ""); // remove duplicate times
-    
-    entry.appendChild(timeSpan);
-    entry.appendChild(textSpan);
-    
-    container.insertBefore(entry, container.firstChild);
-    
-    // Cap logs at 50 entries
-    if (container.children.length > 50) {
-        container.removeChild(container.lastChild);
-    }
-}
-
-function clearEventLogs() {
-    document.getElementById('nurse-event-logs').innerHTML = "";
-    addLogEntry('system', 'ล้างประวัติการแจ้งเตือนสำเร็จ');
-}
-
-function playAudioFeedback(id) {
-    const audio = document.getElementById(id);
-    if (audio) {
-        audio.currentTime = 0;
-        audio.play().catch(e => console.log("Audio feedback play blocked: " + e.message));
-    }
-}
-
-// -------------------------------------------------------------
-// App Initialization
-// -------------------------------------------------------------
-window.addEventListener('DOMContentLoaded', () => {
-    // 1. Map range sliders values update display or run logic
-    document.getElementById('set-audio-sens').addEventListener('input', (e) => {
-        const val = e.target.value;
-        const sensRange = -10 - (-50);
-        const pct = ((val - (-50)) / sensRange) * 100;
-        document.getElementById('audio-threshold-indicator').style.left = Math.min(100, Math.max(0, pct)) + '%';
-    });
-    
-    // 2. Start Bedsore Simulated Timer for local Bed-A1
-    initBedsoreTimer('นอนหงาย');
-    
-    // 3. Setup mock speed-run countdown intervals for simulated Bed A2
-    let bed2Time = 7965; // ~2h 12m
-    setInterval(() => {
-        if (bed2Time > 0) {
-            bed2Time--;
-            const hrs = Math.floor(bed2Time / 3600);
-            const mins = Math.floor((bed2Time % 3600) / 60);
-            const secs = bed2Time % 60;
-            const formatted = `${String(hrs).padStart(2, '0')}:${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
-            const timeEl = document.querySelector('#bed-card-a2 .timer-countdown');
-            if (timeEl) timeEl.innerText = formatted;
-        }
-    }, 1000);
-    
-    // Bed A3 count down
-    let bed3Time = 1935; // ~32 mins
-    setInterval(() => {
-        if (bed3Time > 0) {
-            bed3Time--;
-            const hrs = Math.floor(bed3Time / 3600);
-            const mins = Math.floor((bed3Time % 3600) / 60);
-            const secs = bed3Time % 60;
-            const formatted = `${String(hrs).padStart(2, '0')}:${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
-            const timeEl = document.querySelector('#bed-card-a3 .timer-countdown');
-            if (timeEl) timeEl.innerText = formatted;
-        }
-    }, 1000);
-
-    // Bed A4 count down
-    let bed4Time = 3900; // ~1h 5m
-    setInterval(() => {
-        if (bed4Time > 0) {
-            bed4Time--;
-            const hrs = Math.floor(bed4Time / 3600);
-            const mins = Math.floor((bed4Time % 3600) / 60);
-            const secs = bed4Time % 60;
-            const formatted = `${String(hrs).padStart(2, '0')}:${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
-            const timeEl = document.querySelector('#bed-card-a4 .timer-countdown');
-            if (timeEl) timeEl.innerText = formatted;
-        }
-    }, 1000);
+// ===================================================
+// INIT
+// ===================================================
+document.addEventListener('DOMContentLoaded', () => {
+  // Set today's date minus 7 days as default stroke date
+  const d = new Date();
+  d.setDate(d.getDate() - 7);
+  document.getElementById('stroke-date').value = d.toISOString().split('T')[0];
 });
